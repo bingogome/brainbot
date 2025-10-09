@@ -1,0 +1,19 @@
+[project]
+name = "brainbot-core"
+version = "0.1.0"
+description = "XLeRobot deployment utilities for Jetson"
+requires-python = ">=3.10"
+dependencies = [
+    "pyzmq",
+    "msgpack",
+    "pyyaml",
+    "draccus",
+]
+
+[project.scripts]
+brainbot-robot-service = "brainbot_control_service.run_robot_service:main"
+brainbot-command-service = "brainbot_command_service.run_command_service:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

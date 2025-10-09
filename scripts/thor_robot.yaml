@@ -1,0 +1,34 @@
+# Brainbot robot agent configuration for Jetson Thor
+robot:
+  type: bi_so101_follower
+  id: follower
+  left_arm_port: /dev/ttyACM2
+  right_arm_port: /dev/ttyACM3
+  cameras:
+    left:
+      type: opencv
+      index_or_path: 14
+      width: 640
+      height: 480
+      fps: 15
+    right:
+      type: opencv
+      index_or_path: 12
+      width: 640
+      height: 480
+      fps: 15
+    top:
+      type: opencv
+      index_or_path: 10
+      width: 640
+      height: 480
+      fps: 15
+network:
+  host: 0.0.0.0
+  port: 5555
+loop_hz: 40
+max_missed_actions: 2
+fallback_action: {}
+calibrate_on_start: true
+metadata:
+  site: thor
