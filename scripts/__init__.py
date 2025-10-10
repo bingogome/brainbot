@@ -1,1 +1,1 @@
-"""Utility launchers for Brainbot deployments."""
+"""Per-device launch utilities and configuration templates."""

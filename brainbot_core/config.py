@@ -3,14 +3,13 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 import draccus
 import yaml
 
 from lerobot.robots.config import RobotConfig
 from lerobot.teleoperators.config import TeleoperatorConfig
-
 
 @dataclass(slots=True)
 class NetworkConfig:
@@ -41,11 +40,33 @@ class AIClientConfig:
 
 
 @dataclass(slots=True)
+class RemoteTeleopConfig:
+    host: str
+    port: int
+    timeout_ms: int = 1500
+    api_token: str | None = None
+
+
+@dataclass(slots=True)
+class TeleopEndpointConfig:
+    mode: Literal["remote", "local"]
+    remote: RemoteTeleopConfig | None = None
+    local: TeleoperatorConfig | None = None
+
+
+@dataclass(slots=True)
+class WebVizConfig:
+    host: str = "0.0.0.0"
+    port: int = 8080
+
+
+@dataclass(slots=True)
 class ServerRuntimeConfig:
-    teleops: dict[str, TeleoperatorConfig] = field(default_factory=dict)
+    teleops: dict[str, TeleopEndpointConfig] = field(default_factory=dict)
     default_mode: str | None = None
     ai: AIClientConfig | None = None
     network: NetworkConfig = field(default_factory=NetworkConfig)
+    webviz: WebVizConfig | None = None
     metadata: Mapping[str, Any] | None = None
 
 
@@ -70,12 +91,12 @@ def load_server_config(path: Path) -> ServerRuntimeConfig:
     teleops_data = raw.pop("teleops", None)
     teleop_single = raw.pop("teleop", None)
 
-    teleop_cfgs: dict[str, TeleoperatorConfig] = {}
+    teleop_cfgs: dict[str, TeleopEndpointConfig] = {}
     if teleops_data:
         for name, cfg in teleops_data.items():
-            teleop_cfgs[name] = _load_draccus_config(cfg, TeleoperatorConfig)
+            teleop_cfgs[name] = _make_teleop_endpoint(name, cfg)
     elif teleop_single is not None:
-        teleop_cfgs["default"] = _load_draccus_config(teleop_single, TeleoperatorConfig)
+        teleop_cfgs["default"] = _make_teleop_endpoint("default", teleop_single)
 
     default_mode = raw.pop("default_mode", None)
     if default_mode is None and teleop_cfgs:
@@ -85,12 +106,15 @@ def load_server_config(path: Path) -> ServerRuntimeConfig:
     ai_cfg = AIClientConfig(**ai_data) if ai_data else None
 
     network_cfg = NetworkConfig(**raw.pop("network", {}))
+    webviz_data = raw.pop("webviz", None)
+    webviz_cfg = WebVizConfig(**webviz_data) if webviz_data else None
 
     return ServerRuntimeConfig(
         teleops=teleop_cfgs,
         default_mode=default_mode,
         ai=ai_cfg,
         network=network_cfg,
+        webviz=webviz_cfg,
         metadata=raw.pop("metadata", None),
     )
 
@@ -106,3 +130,23 @@ def _load_draccus_config(data: Mapping[str, Any], target_cls: type) -> Any:
     buffer.seek(0)
     with draccus.config_type("yaml"):
         return draccus.load(target_cls, buffer)
+
+
+def _make_teleop_endpoint(name: str, cfg: Mapping[str, Any]) -> TeleopEndpointConfig:
+    mode = cfg.get("mode")
+    if mode == "remote":
+        if "host" not in cfg or "port" not in cfg:
+            raise ValueError(f"Remote teleop '{name}' requires 'host' and 'port'")
+        return TeleopEndpointConfig(
+            mode="remote",
+            remote=RemoteTeleopConfig(
+                host=str(cfg["host"]),
+                port=int(cfg["port"]),
+                timeout_ms=int(cfg.get("timeout_ms", 1500)),
+                api_token=cfg.get("api_token"),
+            ),
+        )
+    if mode == "local":
+        local_cfg = cfg.get("config", cfg)
+        return TeleopEndpointConfig(mode="local", local=_load_draccus_config(local_cfg, TeleoperatorConfig))
+    raise ValueError(f"Teleop '{name}' must declare mode 'remote' or 'local'")

@@ -17,12 +17,10 @@ def main() -> None:
     parser.add_argument("--no-calibrate", action="store_true", help="Skip calibration on startup")
     args = parser.parse_args()
 
-    argv = ["brainbot-robot-service", "--config", str(args.config)]
+    argv = ["--config", str(args.config)]
     if args.no_calibrate:
         argv.append("--no-calibrate")
-
-    sys.argv = argv
-    robot_main()
+    robot_main(argv)
 
 
 if __name__ == "__main__":

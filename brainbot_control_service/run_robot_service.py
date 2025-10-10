@@ -11,11 +11,11 @@ from brainbot_core.config import EdgeControlConfig, load_edge_config
 from . import CommandChannelClient, CommandLoop, NoOpMobileBase, RobotControlService
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--no-calibrate", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     config: EdgeControlConfig = load_edge_config(args.config)
     robot = make_robot_from_config(config.robot)

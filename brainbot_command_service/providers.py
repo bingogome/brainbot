@@ -5,11 +5,12 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
-from gr00t.eval.service import ExternalRobotInferenceClient
+from gr00t.eval.service import BaseInferenceClient, ExternalRobotInferenceClient
+import zmq
 from lerobot.processor import RobotProcessorPipeline
 from lerobot.teleoperators.teleoperator import Teleoperator
 
-from brainbot_core.proto import ActionMessage, ObservationMessage
+from brainbot_core.proto import ActionMessage, MessageSerializer, ObservationMessage
 
 
 class CommandProvider(ABC):
@@ -24,7 +25,46 @@ class CommandProvider(ABC):
         ...
 
 
-class TeleopCommandProvider(CommandProvider):
+class IdleCommandProvider(CommandProvider):
+    def __init__(self, actions: dict[str, float] | None = None):
+        self._actions = actions or {}
+
+    def compute_command(self, observation: ObservationMessage) -> ActionMessage:
+        return ActionMessage(actions=dict(self._actions))
+    
+
+class AICommandProvider(CommandProvider):
+    def __init__(
+        self,
+        client: ExternalRobotInferenceClient,
+        instruction_key: str = "language_instruction",
+        observation_adapter: Callable[[ObservationMessage], dict[str, Any]] | None = None,
+        action_adapter: Callable[[dict[str, Any]], dict[str, float]] | None = None,
+    ):
+        self.client = client
+        self.instruction_key = instruction_key
+        self._instruction: str | None = None
+        self._observation_adapter = observation_adapter or (lambda obs: dict(obs.payload))
+        self._action_adapter = action_adapter or _numeric_only
+
+    def set_instruction(self, instruction: str) -> None:
+        self._instruction = instruction
+        print(f"[ai] instruction set to: {instruction}")
+
+    def clear_instruction(self) -> None:
+        self._instruction = None
+        print("[ai] instruction cleared")
+
+    def compute_command(self, observation: ObservationMessage) -> ActionMessage:
+        if not self._instruction:
+            return ActionMessage(actions={})
+        obs_payload = self._observation_adapter(observation)
+        obs_payload[self.instruction_key] = self._instruction
+        action_dict = self.client.get_action(obs_payload)
+        return ActionMessage(actions=self._action_adapter(action_dict))
+
+
+class LocalTeleopCommandProvider(CommandProvider):
     def __init__(
         self,
         teleop: Teleoperator,
@@ -51,41 +91,64 @@ class TeleopCommandProvider(CommandProvider):
         if self.robot_action_processor:
             robot_action = self.robot_action_processor((robot_action, payload))
         return ActionMessage(actions=dict(robot_action))
+    
+
+class RemoteTeleopClient(BaseInferenceClient):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._apply_timeouts()
+
+    def _init_socket(self):
+        super()._init_socket()
+        self._apply_timeouts()
+
+    def _apply_timeouts(self):
+        if self.timeout_ms:
+            self.socket.setsockopt(zmq.RCVTIMEO, self.timeout_ms)
+            self.socket.setsockopt(zmq.SNDTIMEO, self.timeout_ms)
+
+    def get_action(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.call_endpoint("get_action", payload)
 
 
-class AICommandProvider(CommandProvider):
+class RemoteTeleopCommandProvider(CommandProvider):
     def __init__(
         self,
-        client: ExternalRobotInferenceClient,
-        instruction_key: str = "language_instruction",
-        observation_adapter: Callable[[ObservationMessage], dict[str, Any]] | None = None,
-        action_adapter: Callable[[dict[str, Any]], dict[str, float]] | None = None,
+        host: str,
+        port: int,
+        timeout_ms: int = 1500,
+        api_token: str | None = None,
     ):
-        self.client = client
-        self.instruction_key = instruction_key
-        self._instruction: str | None = None
-        self._observation_adapter = observation_adapter or (lambda obs: dict(obs.payload))
-        self._action_adapter = action_adapter or _numeric_only
+        self.host = host
+        self.port = port
+        self.timeout_ms = timeout_ms
+        self.api_token = api_token
+        self._client: RemoteTeleopClient | None = None
 
-    def set_instruction(self, instruction: str) -> None:
-        self._instruction = instruction
-        print(f"[ai] instruction set to: {instruction}")
+    def prepare(self) -> None:
+        if self._client is None:
+            self._client = RemoteTeleopClient(
+                host=self.host, port=self.port, timeout_ms=self.timeout_ms, api_token=self.api_token
+            )
+            if not self._client.ping():
+                raise ConnectionError(f"Failed to reach teleop server {self.host}:{self.port}")
 
-    def compute_command(self, observation: ObservationMessage) -> ActionMessage:
-        if not self._instruction:
-            return ActionMessage(actions={})
-        obs_payload = self._observation_adapter(observation)
-        obs_payload[self.instruction_key] = self._instruction
-        action_dict = self.client.get_action(obs_payload)
-        return ActionMessage(actions=self._action_adapter(action_dict))
-
-
-class IdleCommandProvider(CommandProvider):
-    def __init__(self, actions: dict[str, float] | None = None):
-        self._actions = actions or {}
+    def shutdown(self) -> None:
+        if self._client is not None:
+            self._client.socket.close(0)
+            self._client = None
 
     def compute_command(self, observation: ObservationMessage) -> ActionMessage:
-        return ActionMessage(actions=dict(self._actions))
+        if self._client is None:
+            raise RuntimeError("Remote teleop client not connected")
+        payload = MessageSerializer.to_dict(observation)
+        try:
+            response = self._client.get_action({"observation": payload})
+        except zmq.error.Again as exc:
+            raise TimeoutError("Remote teleop timed out") from exc
+        if "action" not in response:
+            raise RuntimeError(f"Remote teleop response missing action: {response}")
+        return MessageSerializer.ensure_action(response["action"])
 
 
 def _numeric_only(values: dict[str, Any]) -> dict[str, float]:

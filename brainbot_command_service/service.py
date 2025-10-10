@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from gr00t.eval.service import BaseInferenceServer
 
@@ -18,6 +18,7 @@ class CommandService(BaseInferenceServer):
         host: str = "*",
         port: int = 5555,
         api_token: str | None = None,
+        exchange_hook: Callable[[dict[str, Any], dict[str, Any]], None] | None = None,
     ):
         super().__init__(host=host, port=port, api_token=api_token)
         if default_key not in providers:
@@ -27,6 +28,7 @@ class CommandService(BaseInferenceServer):
         self._active_key: str | None = None
         self._prepared: set[str] = set()
         self._lock = threading.RLock()
+        self._exchange_hook = exchange_hook
         self._last_config: dict[str, Any] = {}
         self.register_endpoint("get_action", self._handle_get_action)
         self.register_endpoint("sync_config", self._handle_sync_config)
@@ -44,6 +46,11 @@ class CommandService(BaseInferenceServer):
             key = self._active_key or self._default_key
             provider = self._providers[key]
         action = provider.compute_command(observation)
+        if self._exchange_hook:
+            self._exchange_hook(
+                MessageSerializer.to_dict(observation),
+                MessageSerializer.to_dict(action),
+            )
         return {"action": MessageSerializer.to_dict(action)}
 
     def _handle_sync_config(self, config: dict[str, Any]) -> dict[str, Any]:

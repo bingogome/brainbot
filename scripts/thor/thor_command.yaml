@@ -1,0 +1,28 @@
+# Brainbot command service configuration running on Jetson Thor
+teleops:
+  leader:
+    mode: remote
+    host: 192.168.1.30   # operator PC hosting leader teleop server
+    port: 7001
+    timeout_ms: 1000
+  ar:
+    mode: remote
+    host: 192.168.1.31   # AR teleop server (update with actual address)
+    port: 7002
+    timeout_ms: 1000
+
+ai:
+  host: 127.0.0.1        # GR00T running locally on Thor
+  port: 6000
+  timeout_ms: 2000
+  instruction_key: language_instruction
+
+network:
+  host: 127.0.0.1
+  port: 5555
+webviz:
+  host: 0.0.0.0
+  port: 8080
+default_mode: idle
+metadata:
+  node: thor

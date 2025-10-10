@@ -57,5 +57,9 @@ class ModeManager:
         if isinstance(event, IdleModeEvent) and self._idle_key:
             try:
                 self._service.set_mode(self._idle_key)
+                if self._ai_key:
+                    handler = self._service.get_mode_handler(self._ai_key)
+                    if isinstance(handler, AICommandProvider):
+                        handler.clear_instruction()
             except ValueError as exc:
                 print(f"[mode-manager] {exc}")

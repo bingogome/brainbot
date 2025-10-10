@@ -1,10 +1,10 @@
 from .events import IdleModeEvent, InferenceModeEvent, ModeEvent, ModeEventDispatcher, ModeEventListener, TeleopModeEvent
-from .keyboard import KeyboardModeDispatcher
+from .cli import CLIModeDispatcher
 
 __all__ = [
     "InferenceModeEvent",
     "IdleModeEvent",
-    "KeyboardModeDispatcher",
+    "CLIModeDispatcher",
     "ModeEvent",
     "ModeEventDispatcher",
     "ModeEventListener",

@@ -1,0 +1,9 @@
+# Teleop server configuration for AR controller (Meta Quest)
+teleop:
+  mode: local
+  config:
+    type: ar_controller
+    id: quest3
+network:
+  host: 0.0.0.0
+  port: 7002

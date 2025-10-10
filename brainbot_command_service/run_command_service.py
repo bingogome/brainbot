@@ -8,33 +8,51 @@ from lerobot.teleoperators.utils import make_teleoperator_from_config
 
 from gr00t.eval.service import ExternalRobotInferenceClient
 from brainbot_core.config import ServerRuntimeConfig, load_server_config
-from brainbot_mode_dispatcher import KeyboardModeDispatcher
+from brainbot_mode_dispatcher import CLIModeDispatcher
 
-from . import AICommandProvider, CommandProvider, CommandService, IdleCommandProvider, TeleopCommandProvider
-from .mode_manager import ModeManager
+from brainbot_webviz import VisualizationServer
+
+from . import (
+    AICommandProvider,
+    CommandProvider,
+    CommandService,
+    IdleCommandProvider,
+    LocalTeleopCommandProvider,
+    ModeManager,
+    RemoteTeleopCommandProvider,
+)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=Path)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     config: ServerRuntimeConfig = load_server_config(args.config)
-    teleop_providers: dict[str, TeleopCommandProvider] = {}
+    providers: dict[str, CommandProvider] = {}
     teleop_aliases: dict[str, str] = {}
-    for name, teleop_cfg in config.teleops.items():
-        teleop = make_teleoperator_from_config(teleop_cfg)
-        teleop_action_processor, robot_action_processor, _ = make_default_processors()
+    for name, endpoint in config.teleops.items():
         key = f"teleop:{name}"
-        teleop_providers[key] = TeleopCommandProvider(
-            teleop=teleop,
-            teleop_action_processor=teleop_action_processor,
-            robot_action_processor=robot_action_processor,
-        )
+        if endpoint.mode == "remote" and endpoint.remote is not None:
+            providers[key] = RemoteTeleopCommandProvider(
+                host=endpoint.remote.host,
+                port=endpoint.remote.port,
+                timeout_ms=endpoint.remote.timeout_ms,
+                api_token=endpoint.remote.api_token,
+            )
+        elif endpoint.mode == "local" and endpoint.local is not None:
+            teleop = make_teleoperator_from_config(endpoint.local)
+            teleop_action_processor, robot_action_processor, _ = make_default_processors()
+            providers[key] = LocalTeleopCommandProvider(
+                teleop=teleop,
+                teleop_action_processor=teleop_action_processor,
+                robot_action_processor=robot_action_processor,
+            )
+        else:
+            raise ValueError(f"Invalid teleop endpoint configuration for '{name}'")
+
         teleop_aliases[name] = key
         teleop_aliases[key] = key
-
-    providers: dict[str, CommandProvider] = dict(teleop_providers)
     ai_key: str | None = None
     if config.ai:
         ai_client = ExternalRobotInferenceClient(
@@ -59,15 +77,21 @@ def main() -> None:
     if not default_key or default_key not in providers:
         default_key = ai_key or next(iter(providers.keys()))
 
+    visualizer: VisualizationServer | None = None
+    if config.webviz:
+        visualizer = VisualizationServer(host=config.webviz.host, port=config.webviz.port)
+        visualizer.start()
+
     server = CommandService(
         providers=providers,
         default_key=default_key,
         host=config.network.host,
         port=config.network.port,
         api_token=config.network.api_token,
+        exchange_hook=(visualizer.update if visualizer else None),
     )
 
-    dispatcher = KeyboardModeDispatcher()
+    dispatcher = CLIModeDispatcher()
     manager = ModeManager(
         service=server,
         dispatcher=dispatcher,
@@ -83,6 +107,8 @@ def main() -> None:
         pass
     finally:
         manager.stop()
+        if visualizer:
+            visualizer.stop()
 
 
 if __name__ == "__main__":

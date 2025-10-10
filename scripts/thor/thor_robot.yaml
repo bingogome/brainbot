@@ -24,7 +24,7 @@ robot:
       height: 480
       fps: 15
 network:
-  host: 0.0.0.0
+  host: 127.0.0.1
   port: 5555
 loop_hz: 40
 max_missed_actions: 2
