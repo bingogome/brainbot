@@ -52,3 +52,11 @@ The dashboard updates in real time—verify teleop commands before spinning up t
 4. Check networking (`telnet <teleop-host> <port>`) and watch the dashboard charts for unexpected spikes.
 
 Notes: include base64 encoded images (data:image/...) in observation payloads to see previews.
+
+To preview teleop/AI commands without the robot agent, run:
+
+```
+python brainbot/scripts/thor/run_thor_preview.py --config brainbot/scripts/thor/thor_command.yaml
+```
+
+Stop it with CTRL+C when you are ready to start the real robot agent.

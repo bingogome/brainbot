@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import io
 import yaml
 from pathlib import Path
@@ -21,8 +22,18 @@ def _load_yaml(path: Path) -> dict:
 
 
 def _load_teleop_config(data: dict) -> TeleoperatorConfig:
+    mode = data.get("mode")
+    if mode and mode != "local":
+        raise ValueError("run_teleop_server only supports local teleop configurations")
+    payload = data.get("config", data)
+    teleop_type = payload.get("type")
+    if teleop_type:
+        try:
+            importlib.import_module(f"lerobot.teleoperators.{teleop_type}")
+        except ModuleNotFoundError:
+            pass
     buffer = io.StringIO()
-    yaml.safe_dump(data, buffer)
+    yaml.safe_dump(payload, buffer)
     buffer.seek(0)
     with draccus.config_type("yaml"):
         return draccus.load(TeleoperatorConfig, buffer)

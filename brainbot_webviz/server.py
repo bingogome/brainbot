@@ -66,9 +66,10 @@ class VisualizationServer:
 
         numeric_values = _extract_numeric(action)
         entry = {"timestamp": time.time(), "values": numeric_values}
-        self._history.append(entry)
-        if len(self._history) > 200:
-            self._history = self._history[-200:]
+        if numeric_values:
+            self._history.append(entry)
+            if len(self._history) > 200:
+                self._history = self._history[-200:]
 
         history_snapshot = [
             {"timestamp": item["timestamp"], "values": dict(item["values"])}

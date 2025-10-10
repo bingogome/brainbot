@@ -50,7 +50,10 @@ class CommandService(BaseInferenceServer):
         obs_dict = MessageSerializer.to_dict(observation)
         action_dict = MessageSerializer.to_dict(action)
         if self._exchange_hook:
-            self._exchange_hook(obs_dict, action_dict, self._current_mode)
+            try:
+                self._exchange_hook(obs_dict, action_dict, self._current_mode)
+            except Exception as exc:
+                print(f"[webviz] update failed: {exc}")
         return {"action": action_dict}
 
     def _handle_sync_config(self, config: dict[str, Any]) -> dict[str, Any]:
