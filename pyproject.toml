@@ -17,3 +17,6 @@ brainbot-command-service = "brainbot_command_service.run_command_service:main"
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["brainbot*", "scripts*"]
