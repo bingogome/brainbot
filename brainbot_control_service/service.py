@@ -39,8 +39,6 @@ class RobotControlService:
     def connect(self, calibrate: bool = True) -> None:
         self.base.connect()
         self.robot.connect(calibrate=calibrate)
-        self._call_optional(self.robot, "configure")
-        self._call_optional(self.robot, "setup_motors")
 
     def disconnect(self) -> None:
         self.base.stop()
@@ -84,9 +82,3 @@ class RobotControlService:
         features = getattr(self.robot, "action_features", {})
         zeros = {key: 0.0 for key in features.keys()}
         return ActionMessage(actions=zeros)
-
-    @staticmethod
-    def _call_optional(obj: Any, method: str) -> None:
-        fn = getattr(obj, method, None)
-        if callable(fn):
-            fn()
