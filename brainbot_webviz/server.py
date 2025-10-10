@@ -18,7 +18,6 @@ class VisualizationServer:
             "action": {},
             "timestamp": 0.0,
             "mode": "unknown",
-            "images": {},
             "history": [],
         }
         self._history: list[dict[str, Any]] = []
@@ -60,9 +59,7 @@ class VisualizationServer:
             self._thread.join(timeout=1.0)
 
     def update(self, observation: dict[str, Any], action: dict[str, Any], mode: str) -> None:
-        images: dict[str, str] = {}
-        clean_observation = _sanitize_payload(observation, images)
-        clean_action = _sanitize_payload(action, images)
+        clean_action = _sanitize_payload(action)
 
         numeric_values = _extract_numeric(action)
         entry = {"timestamp": time.time(), "values": numeric_values}
@@ -78,16 +75,15 @@ class VisualizationServer:
 
         with self._lock:
             self._data = {
-                "observation": clean_observation,
+                "observation": {},
                 "action": clean_action,
                 "timestamp": entry["timestamp"],
                 "mode": mode,
-                "images": images,
                 "history": history_snapshot,
             }
 
 
-def _sanitize_payload(obj: Any, images: dict[str, str], prefix: str | None = None) -> Any:
+def _sanitize_payload(obj: Any, prefix: str | None = None) -> Any:
     name_prefix = prefix or ""
     if isinstance(obj, dict):
         result: dict[str, Any] = {}
@@ -95,15 +91,12 @@ def _sanitize_payload(obj: Any, images: dict[str, str], prefix: str | None = Non
             if key in {"message_type", "timestamp_ns", "version"}:
                 continue
             child_prefix = f"{name_prefix}.{key}" if name_prefix else key
-            result[key] = _sanitize_payload(value, images, child_prefix)
+            result[key] = _sanitize_payload(value, child_prefix)
         return result
     if isinstance(obj, list):
         if len(obj) > 128:
-            return [_sanitize_payload(v, images, name_prefix) for v in obj[:128]] + ["..."]
-        return [_sanitize_payload(v, images, name_prefix) for v in obj]
-    if isinstance(obj, str) and obj.startswith("data:image/"):
-        images[name_prefix or "image"] = obj
-        return "<image>"
+            return [_sanitize_payload(v, name_prefix) for v in obj[:128]] + ["..."]
+        return [_sanitize_payload(v, name_prefix) for v in obj]
     return obj
 
 
@@ -124,33 +117,28 @@ def _extract_numeric(action: dict[str, Any]) -> dict[str, float]:
 
 _DASHBOARD_HTML = """
 <!DOCTYPE html>
-<html lang=\"en\">
+<html lang="en">
 <head>
-  <meta charset=\"UTF-8\" />
+  <meta charset="UTF-8" />
   <title>Brainbot Telemetry</title>
   <style>
     body { font-family: sans-serif; margin: 2rem; }
     pre { background: #f5f5f5; padding: 1rem; border-radius: 6px; }
     #chart-container { width: 100%; max-width: 960px; margin-bottom: 2rem; }
-    .image-grid { display: flex; flex-wrap: wrap; gap: 1rem; }
-    .image-grid figure { margin: 0; }
-    .image-grid img { max-width: 320px; border-radius: 6px; }
   </style>
-  <script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <h1>Brainbot Command/Observation Feed</h1>
-  <p>Mode: <strong id=\"mode\">unknown</strong></p>
-  <p>Latest timestamp: <span id=\"ts\">n/a</span></p>
+  <p>Mode: <strong id="mode">unknown</strong></p>
+  <p>Latest timestamp: <span id="ts">n/a</span></p>
   <h2>Observation</h2>
-  <pre id=\"obs\"></pre>
+  <pre id="obs"></pre>
   <h2>Action</h2>
-  <pre id=\"act\"></pre>
-  <div id=\"chart-container\">
-    <canvas id=\"actionChart\"></canvas>
+  <pre id="act"></pre>
+  <div id="chart-container">
+    <canvas id="actionChart"></canvas>
   </div>
-  <h2>Images</h2>
-  <div class=\"image-grid\" id=\"images\"></div>
   <script>
     const colors = [
       '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
@@ -171,26 +159,9 @@ _DASHBOARD_HTML = """
         document.getElementById('obs').textContent = JSON.stringify(data.observation, null, 2);
         document.getElementById('act').textContent = JSON.stringify(data.action, null, 2);
         updateChart(data.history || []);
-        updateImages(data.images || {});
       } catch (err) {
         console.error('Refresh error', err);
       }
-    }
-
-    function updateImages(images) {
-      const container = document.getElementById('images');
-      container.innerHTML = '';
-      Object.keys(images).forEach(key => {
-        const figure = document.createElement('figure');
-        const img = document.createElement('img');
-        img.src = images[key];
-        img.alt = key;
-        const caption = document.createElement('figcaption');
-        caption.textContent = key;
-        figure.appendChild(img);
-        figure.appendChild(caption);
-        container.appendChild(figure);
-      });
     }
 
     function updateChart(history) {
