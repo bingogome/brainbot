@@ -124,7 +124,23 @@ def _load_yaml(path: Path) -> dict[str, Any]:
         return yaml.safe_load(handle) or {}
 
 
+import importlib
+
+
 def _load_draccus_config(data: Mapping[str, Any], target_cls: type) -> Any:
+    if isinstance(data, Mapping):
+        choice = data.get("type")
+        if choice:
+            module_name = None
+            if target_cls is RobotConfig:
+                module_name = f"lerobot.robots.{choice}"
+            elif target_cls is TeleoperatorConfig:
+                module_name = f"lerobot.teleoperators.{choice}"
+            if module_name:
+                try:
+                    importlib.import_module(module_name)
+                except ModuleNotFoundError:
+                    pass
     buffer = io.StringIO()
     yaml.safe_dump(dict(data), buffer)
     buffer.seek(0)
