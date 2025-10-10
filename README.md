@@ -1,15 +1,15 @@
 # brainbot
 
-Distributed control stack for Brainbot deployments.
+Distributed control stack for Brainbot deployments with a built-in web dashboard.
 
 ## Components
-- `brainbot_core`: shared configs and message serialization.
-- `brainbot_control_service`: robot-side agent that talks to hardware.
-- `brainbot_command_service`: mode hub running on Thor; connects to local or remote providers and GR00T.
+- `brainbot_core`: shared configs, teleop endpoint parsing, message serialization.
+- `brainbot_control_service`: robot-side agent that streams observations and applies actions.
+- `brainbot_command_service`: mode hub on Thor; connects to local/remote teleops, GR00T, idle, and feeds the visualizer.
 - `brainbot_mode_dispatcher`: mode-event abstractions and CLI dispatcher.
-- `brainbot_teleop_server`: exposes teleop devices over the network.
-- `brainbot_webviz`: HTTP dashboard for observing actions and observations.
-- `brainbot/scripts`: per-device launch utilities (`pc/`, `thor/`).
+- `brainbot_teleop_server`: exposes teleop devices (leader arms, AR controllers) as network endpoints.
+- `brainbot_webviz`: HTTP dashboard with charts, image previews, and current mode display.
+- `brainbot/scripts`: per-device utilities (`pc/`, `thor/`).
 
 ## Typical Setup
 ### Jetson Thor
@@ -18,33 +18,37 @@ Distributed control stack for Brainbot deployments.
    ```bash
    python brainbot/scripts/thor/run_thor_robot.py --config brainbot/scripts/thor/thor_robot.yaml
    ```
-3. Start the command hub:
+3. Start the command hub (webviz runs automatically if configured):
    ```bash
    python brainbot/scripts/thor/run_thor_command.py --config brainbot/scripts/thor/thor_command.yaml
    ```
-   If `webviz` is enabled, open `http://<thor-ip>:8080/` from another machine to see the live dashboard.
+   Browse to `http://<thor-ip>:8080/` to see live charts, current mode, and camera imagery.
 
 ### Teleop Providers
-You can expose teleop devices locally on Thor (define them with `mode: local` in `thor_command.yaml`) or remotely via action servers.
+Define teleops as either local devices (`mode: local`) or remote servers (`mode: remote`). Example remote setups:
 
-- **Leader arms (remote example):**
+- **Leader arms (operator PC):**
   ```bash
   python brainbot/scripts/pc/run_teleop_server.py --config brainbot/scripts/pc/leader_teleop.yaml
   ```
-- **AR teleop (remote example):**
+- **AR controller (Quest bridge):**
   ```bash
   python brainbot/scripts/pc/run_teleop_server.py --config brainbot/scripts/pc/ar_teleop.yaml
   ```
 
 ### Mode Control
-The command service on Thor runs a CLI dispatcher. In the Thor console send JSON commands:
+Use the CLI on Thor to switch sources safely:
 - `{"teleop": "leader"}`
 - `{"teleop": "ar"}`
 - `{"infer": "Pick up the block using the left arm and transfer!"}`
 - `{"idle": ""}`
 
+The dashboard updates in real time—verify teleop commands before spinning up the robot agent, then keep the browser open to monitor actions, images, and mode changes.
+
 ## Testing Tips
-1. Start teleop servers without hardware to check connectivity.
-2. Run the robot agent with a mock robot before touching real arms.
-3. Verify networking (`telnet <teleop-host> <port>`).
-4. Confirm the dashboard updates before enabling live motion.
+1. Start teleop servers with virtual devices to validate connectivity.
+2. Run the command hub (with webviz) before connecting the robot to inspect action streams.
+3. Launch the robot agent with a mock robot to confirm the loop before enabling torque.
+4. Check networking (`telnet <teleop-host> <port>`) and watch the dashboard charts for unexpected spikes.
+
+Notes: include base64 encoded images (data:image/...) in observation payloads to see previews.

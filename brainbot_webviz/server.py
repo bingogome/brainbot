@@ -17,7 +17,11 @@ class VisualizationServer:
             "observation": {},
             "action": {},
             "timestamp": 0.0,
+            "mode": "unknown",
+            "images": {},
+            "history": [],
         }
+        self._history: list[dict[str, Any]] = []
         self._server = ThreadingHTTPServer((self.host, self.port), self._handler_factory())
         self._thread: threading.Thread | None = None
 
@@ -55,13 +59,66 @@ class VisualizationServer:
         if self._thread:
             self._thread.join(timeout=1.0)
 
-    def update(self, observation: dict[str, Any], action: dict[str, Any]) -> None:
+    def update(self, observation: dict[str, Any], action: dict[str, Any], mode: str) -> None:
+        images: dict[str, str] = {}
+        clean_observation = _sanitize_payload(observation, images)
+        clean_action = _sanitize_payload(action, images)
+
+        numeric_values = _extract_numeric(action)
+        entry = {"timestamp": time.time(), "values": numeric_values}
+        self._history.append(entry)
+        if len(self._history) > 200:
+            self._history = self._history[-200:]
+
+        history_snapshot = [
+            {"timestamp": item["timestamp"], "values": dict(item["values"])}
+            for item in self._history
+        ]
+
         with self._lock:
             self._data = {
-                "observation": observation,
-                "action": action,
-                "timestamp": time.time(),
+                "observation": clean_observation,
+                "action": clean_action,
+                "timestamp": entry["timestamp"],
+                "mode": mode,
+                "images": images,
+                "history": history_snapshot,
             }
+
+
+def _sanitize_payload(obj: Any, images: dict[str, str], prefix: str | None = None) -> Any:
+    name_prefix = prefix or ""
+    if isinstance(obj, dict):
+        result: dict[str, Any] = {}
+        for key, value in obj.items():
+            if key in {"message_type", "timestamp_ns", "version"}:
+                continue
+            child_prefix = f"{name_prefix}.{key}" if name_prefix else key
+            result[key] = _sanitize_payload(value, images, child_prefix)
+        return result
+    if isinstance(obj, list):
+        if len(obj) > 128:
+            return [_sanitize_payload(v, images, name_prefix) for v in obj[:128]] + ["..."]
+        return [_sanitize_payload(v, images, name_prefix) for v in obj]
+    if isinstance(obj, str) and obj.startswith("data:image/"):
+        images[name_prefix or "image"] = obj
+        return "<image>"
+    return obj
+
+
+def _extract_numeric(action: dict[str, Any]) -> dict[str, float]:
+    numeric: dict[str, float] = {}
+    values = action.get("actions", action)
+    if isinstance(values, dict):
+        iterator = values.items()
+    else:
+        iterator = action.items()
+    for key, value in iterator:
+        try:
+            numeric[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return numeric
 
 
 _DASHBOARD_HTML = """
@@ -73,28 +130,106 @@ _DASHBOARD_HTML = """
   <style>
     body { font-family: sans-serif; margin: 2rem; }
     pre { background: #f5f5f5; padding: 1rem; border-radius: 6px; }
+    #chart-container { width: 100%; max-width: 960px; margin-bottom: 2rem; }
+    .image-grid { display: flex; flex-wrap: wrap; gap: 1rem; }
+    .image-grid figure { margin: 0; }
+    .image-grid img { max-width: 320px; border-radius: 6px; }
   </style>
+  <script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>
 </head>
 <body>
   <h1>Brainbot Command/Observation Feed</h1>
-  <p>Latest timestamp: <span id="ts">n/a</span></p>
+  <p>Mode: <strong id=\"mode\">unknown</strong></p>
+  <p>Latest timestamp: <span id=\"ts\">n/a</span></p>
   <h2>Observation</h2>
-  <pre id="obs"></pre>
+  <pre id=\"obs\"></pre>
   <h2>Action</h2>
-  <pre id="act"></pre>
+  <pre id=\"act\"></pre>
+  <div id=\"chart-container\">
+    <canvas id=\"actionChart\"></canvas>
+  </div>
+  <h2>Images</h2>
+  <div class=\"image-grid\" id=\"images\"></div>
   <script>
+    const colors = [
+      '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
+      '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe',
+      '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000',
+      '#aaffc3', '#808000', '#ffd8b1', '#000075', '#808080'
+    ];
+    let actionChart = null;
+    let chartKeys = [];
+
     async function refresh() {
       try {
         const res = await fetch('/data');
         if (!res.ok) return;
         const data = await res.json();
+        document.getElementById('mode').textContent = data.mode || 'unknown';
         document.getElementById('ts').textContent = new Date(data.timestamp * 1000).toLocaleString();
         document.getElementById('obs').textContent = JSON.stringify(data.observation, null, 2);
         document.getElementById('act').textContent = JSON.stringify(data.action, null, 2);
+        updateChart(data.history || []);
+        updateImages(data.images || {});
       } catch (err) {
         console.error('Refresh error', err);
       }
     }
+
+    function updateImages(images) {
+      const container = document.getElementById('images');
+      container.innerHTML = '';
+      Object.keys(images).forEach(key => {
+        const figure = document.createElement('figure');
+        const img = document.createElement('img');
+        img.src = images[key];
+        img.alt = key;
+        const caption = document.createElement('figcaption');
+        caption.textContent = key;
+        figure.appendChild(img);
+        figure.appendChild(caption);
+        container.appendChild(figure);
+      });
+    }
+
+    function updateChart(history) {
+      const labels = history.map(item => new Date(item.timestamp * 1000).toLocaleTimeString());
+      const keys = Array.from(new Set(history.flatMap(item => Object.keys(item.values || {}))));
+
+      if (!actionChart || JSON.stringify(keys) !== JSON.stringify(chartKeys)) {
+        const datasets = keys.map((key, idx) => ({
+          label: key,
+          data: history.map(item => (item.values && key in item.values ? item.values[key] : null)),
+          borderColor: colors[idx % colors.length],
+          tension: 0.2,
+          spanGaps: true,
+          fill: false,
+        }));
+        const ctx = document.getElementById('actionChart').getContext('2d');
+        if (actionChart) actionChart.destroy();
+        actionChart = new Chart(ctx, {
+          type: 'line',
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            scales: {
+              x: { display: true, title: { display: true, text: 'Time' } },
+              y: { display: true, title: { display: true, text: 'Value' } },
+            },
+            interaction: { mode: 'index', intersect: false },
+          },
+        });
+        chartKeys = keys;
+      } else {
+        actionChart.data.labels = labels;
+        actionChart.data.datasets.forEach((dataset, idx) => {
+          const key = chartKeys[idx];
+          dataset.data = history.map(item => (item.values && key in item.values ? item.values[key] : null));
+        });
+        actionChart.update();
+      }
+    }
+
     refresh();
     setInterval(refresh, 1000);
   </script>

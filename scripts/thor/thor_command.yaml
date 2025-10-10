@@ -5,6 +5,12 @@ teleops:
     host: 192.168.22.171   # operator PC hosting leader teleop server
     port: 7001
     timeout_ms: 1000
+  # local_stub:
+  #   mode: local
+  #   config:
+  #     type: some_local_teleop
+  #     id: local
+  #     # ... additional teleop fields ...
   # ar:
   #   mode: remote
   #   host: 192.168.1.31   # AR teleop server (update with actual address)

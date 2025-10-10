@@ -30,6 +30,7 @@ class CommandService(BaseInferenceServer):
         self._lock = threading.RLock()
         self._exchange_hook = exchange_hook
         self._last_config: dict[str, Any] = {}
+        self._current_mode = default_key
         self.register_endpoint("get_action", self._handle_get_action)
         self.register_endpoint("sync_config", self._handle_sync_config)
 
@@ -46,12 +47,11 @@ class CommandService(BaseInferenceServer):
             key = self._active_key or self._default_key
             provider = self._providers[key]
         action = provider.compute_command(observation)
+        obs_dict = MessageSerializer.to_dict(observation)
+        action_dict = MessageSerializer.to_dict(action)
         if self._exchange_hook:
-            self._exchange_hook(
-                MessageSerializer.to_dict(observation),
-                MessageSerializer.to_dict(action),
-            )
-        return {"action": MessageSerializer.to_dict(action)}
+            self._exchange_hook(obs_dict, action_dict, self._current_mode)
+        return {"action": action_dict}
 
     def _handle_sync_config(self, config: dict[str, Any]) -> dict[str, Any]:
         self._last_config = config
@@ -74,6 +74,7 @@ class CommandService(BaseInferenceServer):
             provider.prepare()
             self._active_key = key
             self._prepared.add(key)
+            self._current_mode = key
             print(f"[command-service] active provider: {key}")
 
     # ModeController compatibility

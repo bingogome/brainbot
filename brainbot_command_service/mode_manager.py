@@ -42,6 +42,10 @@ class ModeManager:
         if isinstance(event, TeleopModeEvent):
             key = self._provider_aliases.get(event.alias, event.alias)
             try:
+                if self._ai_key:
+                    handler = self._service.get_mode_handler(self._ai_key)
+                    if isinstance(handler, AICommandProvider):
+                        handler.clear_instruction()
                 self._service.set_mode(key)
             except ValueError as exc:
                 print(f"[mode-manager] {exc}")
