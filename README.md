@@ -27,11 +27,11 @@ Brainbot is a modular hub-and-spoke control stack for combining teleoperation, A
                                           │ (brainbot_control_service)       │
                                           │  • Streams obs/actions           │
                                           │  • Drives hardware               │
-                                          └──────────────────────────────────┘
-                                                             │
-                                            ┌────────────────▼──────────────────┐
-                                            |  AI Policy Server (on PC or Edge) │
-                                            └───────────────────────────────────┘
+                                          └──────────────▲───────────────────┘
+                                                         │ │
+                                          ┌────────────────▼──────────────────┐
+                                          |  AI Policy Server (on PC or Edge) │
+                                          └───────────────────────────────────┘
 ```
 
 - **Teleop servers** expose local devices over ZMQ (one per leader rig or AR bridge)
