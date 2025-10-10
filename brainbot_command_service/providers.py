@@ -7,7 +7,14 @@ from typing import Any
 
 from gr00t.eval.service import BaseInferenceClient, ExternalRobotInferenceClient
 import zmq
-from lerobot.processor import RobotProcessorPipeline
+from typing import Any
+
+try:
+    from lerobot.processor import RobotProcessorPipeline, make_default_processors
+except ImportError:  # compatibility with newer LeRobot releases
+    from lerobot.processor.factory import make_default_processors  # type: ignore
+
+    RobotProcessorPipeline = Any  # type: ignore
 from lerobot.teleoperators.teleoperator import Teleoperator
 
 from brainbot_core.proto import ActionMessage, MessageSerializer, ObservationMessage

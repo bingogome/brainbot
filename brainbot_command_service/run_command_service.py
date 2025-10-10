@@ -3,7 +3,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from lerobot.processor import make_default_processors
+try:
+    from lerobot.processor import make_default_processors
+except ImportError:  # compatibility with newer LeRobot releases
+    from lerobot.processor.factory import make_default_processors  # type: ignore
 from lerobot.teleoperators.utils import make_teleoperator_from_config
 
 from gr00t.eval.service import ExternalRobotInferenceClient
