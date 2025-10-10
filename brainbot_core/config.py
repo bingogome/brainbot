@@ -141,6 +141,14 @@ def _load_draccus_config(data: Mapping[str, Any], target_cls: type) -> Any:
                     importlib.import_module(module_name)
                 except ModuleNotFoundError:
                     pass
+        if target_cls is RobotConfig and "cameras" in data:
+            for cam_cfg in data["cameras"].values():
+                cam_type = cam_cfg.get("type") if isinstance(cam_cfg, Mapping) else None
+                if cam_type:
+                    try:
+                        importlib.import_module(f"lerobot.cameras.{cam_type}")
+                    except ModuleNotFoundError:
+                        pass
     buffer = io.StringIO()
     yaml.safe_dump(dict(data), buffer)
     buffer.seek(0)
