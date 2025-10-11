@@ -155,6 +155,5 @@ camera_stream:
 - Robot/teleop/camera modules auto-import at load time so YAML configs “just work”.
 - Remote teleops are pinged and keep socket timeouts, preventing the control loop from blocking.
 - Switching out of AI mode clears the last instruction; idle is always available as a safe fallback.
-- WebViz focuses on command data; camera previews stream separately so the dashboard stays lightweight.
 
 With these pieces, you can teleoperate, stream multiple cameras, run GR00T policies, and monitor everything across edge computers, PCs, and AR controllers—all within Brainbot’s modular stack.
