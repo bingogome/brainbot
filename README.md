@@ -5,33 +5,34 @@ Brainbot is a modular hub-and-spoke control stack for combining teleoperation, A
 ## Architecture
 
 ```
-┌───────────────┐        ┌──────────────────┐      ┌───────────────────────┐
-│ Teleop Server │◄──────►│ Teleop Action    │      │ Web Dashboard         │
-│(on PC or Edge)│    ZMQ │ Server(s)        │      │ (brainbot_webviz)     │
-│ run_teleop_…  │        └──────────────────┘      └───────────────────────┘
-└───────────────┘                                         ▲
-                                                          │ HTTP
-                                                          │
-                                          ┌───────────────┴─────────────────┐
-                                          │ Command Hub (on Edge)           │
-                                          │ (brainbot_command_service)      │
-                                          │ Mode manager + CLI              │
-                                          │  • Local/remote teleop provider │
-                                          │  • AI provider                  │
-                                          │  • WebViz hook                  │
-                                          └────────────▲──────────────┬─────┘
-                                                       │ ZMQ          │
-                                                       │              │
-                                          ┌────────────┴──────────────▼──────┐
-                                          │ Robot Controller (on Edge)       │
-                                          │ (brainbot_control_service)       │
-                                          │  • Streams obs/actions           │
-                                          │  • Drives hardware               │
-                                          └──────────────▲───────────────────┘
-                                                         │ │
-                                          ┌────────────────▼──────────────────┐
-                                          |  AI Policy Server (on PC or Edge) │
-                                          └───────────────────────────────────┘
+Command Providers:                          |    Command Consumers:
+┌───────────────┐     ┌──────────────────┐  |            ┌───────────────────────┐
+│ Teleop Server │◄───►│ Teleop Action    │  |            │ Web Dashboard         │
+│(on PC or Edge)│ ZMQ │ Server(s)        │  |            │ (brainbot_webviz)     │
+│ run_teleop_…  │     └──────────────────┘  |            └───────────────────────┘
+└───────────────┘                           |                      ▲
+                                            |                      │ HTTP
+┌───────────────────────────────────┐       |                      │
+|  AI Policy Server (on PC or Edge) │       |      ┌───────────────┴─────────────────┐
+└───────────────────────────────────┘       |      │ Command Hub (on Edge)           │
+                                            |      │ (brainbot_command_service)      │
+                                            |      │ Mode manager + CLI              │
+                                            |      │  • Local/remote teleop provider │
+                                            |      │  • AI provider                  │
+                                            |      │  • WebViz hook                  │
+                                            |      └────────────▲──────────────┬─────┘
+                                            |                   │ ZMQ          │
+                                            |                   │              │
+                                            |      ┌────────────┴──────────────▼──────┐
+                                            |      │ Robot Controller (on Edge)       │
+                                            |      │ (brainbot_control_service)       │
+                                            |      │  • Streams obs/actions           │
+                                            |      │  • Drives hardware               │
+                                            |      └──────────────────────────────────┘
+                                                         
+                                          
+                                          
+                                          
 ```
 
 - **Teleop servers** expose local devices over ZMQ (one per leader rig or AR bridge)
