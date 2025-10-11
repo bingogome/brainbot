@@ -5,7 +5,7 @@ Brainbot is a modular hub-and-spoke control stack for combining teleoperation, A
 ## Architecture
 
 ```
-Command Providers:                          |    Command Consumers:
+Command Providers -> Hub:                   |    Command Consumers:
 ┌───────────────┐     ┌──────────────────┐  |            ┌───────────────────────┐
 │ Teleop Server │◄───►│ Teleop Action    │  |            │ Web Dashboard         │
 │(on PC or Edge)│ ZMQ │ Server(s)        │  |            │ (brainbot_webviz)     │
@@ -28,11 +28,7 @@ Command Providers:                          |    Command Consumers:
                                             |      │ (brainbot_control_service)       │
                                             |      │  • Streams obs/actions           │
                                             |      │  • Drives hardware               │
-                                            |      └──────────────────────────────────┘
-                                                         
-                                          
-                                          
-                                          
+                                            |      └──────────────────────────────────┘                                          
 ```
 
 - **Teleop servers** expose local devices over ZMQ (one per leader rig or AR bridge)
