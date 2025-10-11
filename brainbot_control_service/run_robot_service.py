@@ -8,7 +8,7 @@ from lerobot.robots.utils import make_robot_from_config
 
 from brainbot_core.config import EdgeControlConfig, load_edge_config
 
-from . import CommandChannelClient, CommandLoop, NoOpMobileBase, RobotControlService
+from . import CameraStreamer, CommandChannelClient, CommandLoop, NoOpMobileBase, RobotControlService
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -19,19 +19,30 @@ def main(argv: list[str] | None = None) -> None:
 
     config: EdgeControlConfig = load_edge_config(args.config)
     robot = make_robot_from_config(config.robot)
-    service = RobotControlService(robot=robot, base=NoOpMobileBase())
+    obs_adapter_name = config.observation_adapter.lower()
+
+    if obs_adapter_name == "identity":
+        observation_adapter = lambda obs: obs  # noqa: E731
+    elif obs_adapter_name == "numeric_only":
+        observation_adapter = None
+    else:
+        raise ValueError(f"Unknown observation_adapter '{config.observation_adapter}'")
+
+    service = RobotControlService(robot=robot, base=NoOpMobileBase(), observation_adapter=observation_adapter)
     client = CommandChannelClient(
         host=config.network.host,
         port=config.network.port,
         timeout_ms=config.network.timeout_ms,
         api_token=config.network.api_token,
     )
+    camera_streamer = CameraStreamer(config.camera_stream) if config.camera_stream else None
     loop = CommandLoop(
         service=service,
         client=client,
         rate_hz=config.loop_hz,
         max_missed_actions=config.max_missed_actions,
         fallback_action=config.fallback_action,
+        camera_streamer=camera_streamer,
     )
 
     def shutdown_handler(signum, frame):
@@ -53,6 +64,8 @@ def main(argv: list[str] | None = None) -> None:
     finally:
         loop.stop()
         service.disconnect()
+        if camera_streamer:
+            camera_streamer.close()
 
 
 if __name__ == "__main__":

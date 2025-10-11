@@ -29,6 +29,9 @@ network:
 webviz:
   host: 0.0.0.0
   port: 8080
+camera_stream:
+  host: 127.0.0.1
+  port: 7005
 default_mode: idle
 metadata:
   node: thor

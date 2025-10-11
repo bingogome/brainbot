@@ -1,15 +1,25 @@
 from __future__ import annotations
 
+import base64
 import json
 import threading
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, Callable
+
+import msgpack
+import zmq
 
 
 class VisualizationServer:
-    def __init__(self, host: str = "0.0.0.0", port: int = 8080):
+    def __init__(
+        self,
+        host: str = "0.0.0.0",
+        port: int = 8080,
+        camera_host: str | None = None,
+        camera_port: int | None = None,
+    ):
         self.host = host
         self.port = port
         self._lock = threading.Lock()
@@ -19,10 +29,21 @@ class VisualizationServer:
             "timestamp": 0.0,
             "mode": "unknown",
             "history": [],
+            "previews": {},
         }
         self._history: list[dict[str, Any]] = []
+        self._camera_lock = threading.Lock()
+        self._camera_frames: dict[str, dict[str, Any]] = {}
+        self._camera_subscriber: CameraSubscriber | None = None
         self._server = ThreadingHTTPServer((self.host, self.port), self._handler_factory())
         self._thread: threading.Thread | None = None
+
+        if camera_host and camera_port:
+            self._camera_subscriber = CameraSubscriber(
+                host=camera_host,
+                port=camera_port,
+                callback=self._on_camera_frame,
+            )
 
     def _handler_factory(self):
         outer = self
@@ -57,6 +78,8 @@ class VisualizationServer:
         self._server.shutdown()
         if self._thread:
             self._thread.join(timeout=1.0)
+        if self._camera_subscriber:
+            self._camera_subscriber.stop()
 
     def update(self, observation: dict[str, Any], action: dict[str, Any], mode: str) -> None:
         clean_action = _sanitize_payload(action)
@@ -73,6 +96,8 @@ class VisualizationServer:
             for item in self._history
         ]
 
+        previews = self._snapshot_camera_frames()
+
         with self._lock:
             self._data = {
                 "observation": {},
@@ -80,7 +105,27 @@ class VisualizationServer:
                 "timestamp": entry["timestamp"],
                 "mode": mode,
                 "history": history_snapshot,
+                "previews": previews,
             }
+
+    def _snapshot_camera_frames(self) -> dict[str, Any]:
+        with self._camera_lock:
+            return {name: dict(frame) for name, frame in self._camera_frames.items()}
+
+    def _on_camera_frame(self, name: str, payload: dict[str, Any]) -> None:
+        data = payload.get("data")
+        if not isinstance(data, (bytes, bytearray)):
+            return
+        encoded = base64.b64encode(data).decode("ascii")
+        frame_info = {
+            "camera": name,
+            "timestamp": float(payload.get("timestamp", time.time())),
+            "width": int(payload.get("width", 0)),
+            "height": int(payload.get("height", 0)),
+            "src": f"data:image/jpeg;base64,{encoded}",
+        }
+        with self._camera_lock:
+            self._camera_frames[name] = frame_info
 
 
 def _sanitize_payload(obj: Any, prefix: str | None = None) -> Any:
@@ -125,6 +170,10 @@ _DASHBOARD_HTML = """
     body { font-family: sans-serif; margin: 2rem; }
     pre { background: #f5f5f5; padding: 1rem; border-radius: 6px; }
     #chart-container { width: 100%; max-width: 960px; margin-bottom: 2rem; }
+    .image-grid { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 2rem; }
+    .image-grid figure { margin: 0; }
+    .image-grid img { max-width: 320px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+    .image-grid figcaption { text-align: center; margin-top: 0.5rem; font-size: 0.9rem; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -139,6 +188,8 @@ _DASHBOARD_HTML = """
   <div id="chart-container">
     <canvas id="actionChart"></canvas>
   </div>
+  <h2>Camera Previews</h2>
+  <div class="image-grid" id="images"></div>
   <script>
     const colors = [
       '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
@@ -159,9 +210,29 @@ _DASHBOARD_HTML = """
         document.getElementById('obs').textContent = JSON.stringify(data.observation, null, 2);
         document.getElementById('act').textContent = JSON.stringify(data.action, null, 2);
         updateChart(data.history || []);
+        updateImages(data.previews || {});
       } catch (err) {
         console.error('Refresh error', err);
       }
+    }
+
+    function updateImages(previews) {
+      const container = document.getElementById('images');
+      container.innerHTML = '';
+      Object.keys(previews).forEach(name => {
+        const frame = previews[name];
+        if (!frame.src) return;
+        const figure = document.createElement('figure');
+        const img = document.createElement('img');
+        img.src = frame.src;
+        img.alt = name;
+        const caption = document.createElement('figcaption');
+        const ts = new Date(frame.timestamp * 1000).toLocaleTimeString();
+        caption.textContent = `${name} (${frame.width}×${frame.height}) – ${ts}`;
+        figure.appendChild(img);
+        figure.appendChild(caption);
+        container.appendChild(figure);
+      });
     }
 
     function updateChart(history) {
@@ -208,3 +279,40 @@ _DASHBOARD_HTML = """
 </body>
 </html>
 """
+
+
+class CameraSubscriber:
+    def __init__(self, host: str, port: int, callback: Callable[[str, dict[str, Any]], None]):
+        self._callback = callback
+        self._context = zmq.Context.instance()
+        self._socket = self._context.socket(zmq.SUB)
+        self._socket.connect(f"tcp://{host}:{port}")
+        self._socket.setsockopt(zmq.SUBSCRIBE, b"")
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def _loop(self) -> None:
+        poller = zmq.Poller()
+        poller.register(self._socket, zmq.POLLIN)
+        while not self._stop.is_set():
+            events = dict(poller.poll(500))
+            if self._socket in events and events[self._socket] == zmq.POLLIN:
+                try:
+                    topic, payload = self._socket.recv_multipart()
+                except ValueError:
+                    continue
+                try:
+                    data = msgpack.unpackb(payload, raw=False)
+                except Exception:
+                    continue
+                camera = topic.decode("utf-8")
+                try:
+                    self._callback(camera, data)
+                except Exception:
+                    continue
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=1.0)
+        self._socket.close(0)

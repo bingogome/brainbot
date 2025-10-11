@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
 try:
@@ -10,7 +11,7 @@ except ImportError:  # compatibility with newer LeRobot releases
 from lerobot.teleoperators.utils import make_teleoperator_from_config
 
 from gr00t.eval.service import ExternalRobotInferenceClient
-from brainbot_core.config import ServerRuntimeConfig, load_server_config
+from brainbot_core.config import AIClientConfig, ServerRuntimeConfig, WebVizConfig, load_server_config
 from brainbot_mode_dispatcher import CLIModeDispatcher
 
 from brainbot_webviz import VisualizationServer
@@ -24,6 +25,9 @@ from . import (
     ModeManager,
     RemoteTeleopCommandProvider,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -56,20 +60,24 @@ def main(argv: list[str] | None = None) -> None:
 
         teleop_aliases[name] = key
         teleop_aliases[key] = key
-    ai_key: str | None = None
-    if config.ai:
-        ai_client = ExternalRobotInferenceClient(
-            host=config.ai.host,
-            port=config.ai.port,
-            timeout_ms=config.ai.timeout_ms,
-            api_token=config.ai.api_token,
-        )
-        ai_provider = AICommandProvider(
-            client=ai_client,
-            instruction_key=config.ai.instruction_key,
-        )
-        providers["infer"] = ai_provider
-        ai_key = "infer"
+    ai_cfg = config.ai or AIClientConfig()
+    ai_client = ExternalRobotInferenceClient(
+        host=ai_cfg.host,
+        port=ai_cfg.port,
+        timeout_ms=ai_cfg.timeout_ms,
+        api_token=ai_cfg.api_token,
+    )
+    try:
+        if not ai_client.ping():
+            logger.warning("GR00T inference server at %s:%s did not respond to ping", ai_cfg.host, ai_cfg.port)
+    except Exception as exc:
+        logger.warning("Could not ping GR00T inference server (%s)", exc)
+    ai_provider = AICommandProvider(
+        client=ai_client,
+        instruction_key=ai_cfg.instruction_key,
+    )
+    providers["infer"] = ai_provider
+    ai_key: str | None = "infer"
 
     idle_key = "idle"
     providers[idle_key] = IdleCommandProvider()
@@ -80,10 +88,16 @@ def main(argv: list[str] | None = None) -> None:
     if not default_key or default_key not in providers:
         default_key = ai_key or next(iter(providers.keys()))
 
-    visualizer: VisualizationServer | None = None
-    if config.webviz:
-        visualizer = VisualizationServer(host=config.webviz.host, port=config.webviz.port)
-        visualizer.start()
+    webviz_cfg = config.webviz or WebVizConfig()
+    camera_host = config.camera_stream.host if config.camera_stream else None
+    camera_port = config.camera_stream.port if config.camera_stream else None
+    visualizer = VisualizationServer(
+        host=webviz_cfg.host,
+        port=webviz_cfg.port,
+        camera_host=camera_host,
+        camera_port=camera_port,
+    )
+    visualizer.start()
 
     server = CommandService(
         providers=providers,
@@ -91,7 +105,7 @@ def main(argv: list[str] | None = None) -> None:
         host=config.network.host,
         port=config.network.port,
         api_token=config.network.api_token,
-        exchange_hook=(visualizer.update if visualizer else None),
+        exchange_hook=visualizer.update,
     )
 
     dispatcher = CLIModeDispatcher()
@@ -110,8 +124,7 @@ def main(argv: list[str] | None = None) -> None:
         pass
     finally:
         manager.stop()
-        if visualizer:
-            visualizer.stop()
+        visualizer.stop()
 
 
 if __name__ == "__main__":

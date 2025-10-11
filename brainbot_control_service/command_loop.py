@@ -8,6 +8,7 @@ from brainbot_core.proto import ActionMessage
 
 from .command_client import CommandChannelClient
 from .service import RobotControlService
+from .camera_streamer import CameraStreamer
 
 
 class CommandLoop:
@@ -18,6 +19,7 @@ class CommandLoop:
         rate_hz: float = 30.0,
         max_missed_actions: int = 3,
         fallback_action: Mapping[str, float] | None = None,
+        camera_streamer: CameraStreamer | None = None,
     ):
         self.service = service
         self.client = client
@@ -27,11 +29,17 @@ class CommandLoop:
         self._running = threading.Event()
         self._running.set()
         self._fallback = ActionMessage(actions=dict(fallback_action or {}))
+        self.camera_streamer = camera_streamer
 
     def run(self) -> None:
         while self._running.is_set():
             loop_start = time.perf_counter()
             observation = self.service.get_observation()
+            if self.camera_streamer:
+                try:
+                    self.camera_streamer.publish(observation.payload)
+                except Exception as exc:
+                    print(f"[camera-stream] publish failed: {exc}")
             try:
                 action = self.client.compute_action(observation)
                 self._missed_actions = 0
@@ -51,3 +59,5 @@ class CommandLoop:
 
     def stop(self) -> None:
         self._running.clear()
+        if self.camera_streamer:
+            self.camera_streamer.close()
