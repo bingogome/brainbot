@@ -91,11 +91,22 @@ def _encode_frame(frame: np.ndarray, name: str, timestamp: float, quality: int) 
 
 def _get_nested(payload: Any, path: str) -> Any:
     current = payload
-    for part in path.split('.'):
-        if isinstance(current, dict) and part in current:
-            current = current[part]
-        else:
-            return None
+    parts = path.split('.')
+    index = 0
+    while index < len(parts):
+        part = parts[index]
+        if isinstance(current, dict):
+            if part in current:
+                current = current[part]
+                index += 1
+                continue
+            remaining = ".".join(parts[index:])
+            if remaining and remaining in current:
+                return current[remaining]
+            if index + 1 < len(parts) and parts[index + 1] in current:
+                index += 1
+                continue
+        return None
     return current
 
 
