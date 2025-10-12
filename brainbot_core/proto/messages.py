@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Mapping
 
 import msgpack
+import numpy as np
 
 
 MessageType = Literal["observation", "action", "status"]
@@ -39,10 +40,17 @@ def _to_builtin(value: Any) -> Any:
         return {str(k): _to_builtin(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_to_builtin(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return value.tolist()
     if isinstance(value, (int, float, str, bool)) or value is None:
         return value
+    if hasattr(value, "tolist"):
+        return value.tolist()
     if hasattr(value, "item"):
-        item = value.item()
+        try:
+            item = value.item()
+        except Exception:
+            return value
         if isinstance(item, (int, float, bool)):
             return float(item) if isinstance(item, (int, float)) else item
     return value
