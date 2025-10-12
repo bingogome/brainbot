@@ -13,6 +13,11 @@ import msgpack
 import numpy as np
 import zmq
 
+try:
+    import cv2
+except ImportError:  # pragma: no cover - optional dependency
+    cv2 = None  # type: ignore[assignment]
+
 
 class VisualizationServer:
     def __init__(
@@ -100,6 +105,11 @@ class VisualizationServer:
         ]
 
         previews = self._snapshot_camera_frames()
+        inline_previews = _extract_inline_previews(observation)
+        if inline_previews:
+            merged: dict[str, Any] = dict(inline_previews)
+            merged.update(previews)
+            previews = merged
 
         with self._lock:
             self._data = {
@@ -161,6 +171,71 @@ def _extract_numeric(action: dict[str, Any]) -> dict[str, float]:
         except (TypeError, ValueError):
             continue
     return numeric
+
+
+def _extract_inline_previews(observation: Any) -> dict[str, Any]:
+    frames: dict[str, Any] = {}
+    if not isinstance(observation, Mapping):
+        return frames
+
+    def _walk(node: Any, prefix: str) -> None:
+        if isinstance(node, Mapping):
+            for key, value in node.items():
+                name = f"{prefix}.{key}" if prefix else str(key)
+                _walk(value, name)
+            return
+        if isinstance(node, (list, tuple)):
+            for idx, value in enumerate(node):
+                name = f"{prefix}[{idx}]"
+                _walk(value, name)
+            return
+        if isinstance(node, np.ndarray):
+            label = prefix or "observation"
+            frame_info = _encode_inline_frame(label, node)
+            if frame_info:
+                frames[label] = frame_info
+
+    _walk(observation, "")
+    return frames
+
+
+def _encode_inline_frame(name: str, frame: np.ndarray) -> dict[str, Any] | None:
+    if cv2 is None:
+        return None
+    image = np.asarray(frame)
+    if image.ndim not in (2, 3):
+        return None
+    if image.ndim == 3 and image.shape[2] not in (1, 3, 4):
+        return None
+    height, width = (image.shape[:2] if image.ndim >= 2 else (0, 0))
+    if height < 32 or width < 32:
+        return None
+    if image.dtype != np.uint8:
+        if np.issubdtype(image.dtype, np.floating):
+            scaled = image
+            if scaled.max() <= 1.0:
+                scaled = scaled * 255.0
+            image = np.clip(scaled, 0, 255).astype(np.uint8)
+        else:
+            image = np.clip(image, 0, 255).astype(np.uint8)
+    if image.ndim == 3:
+        if image.shape[2] == 1:
+            image = np.squeeze(image, axis=2)
+        elif image.shape[2] == 4:
+            image = image[..., :3]
+    if image.ndim == 2:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    success, buffer = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+    if not success:
+        return None
+    encoded = base64.b64encode(buffer).decode("ascii")
+    return {
+        "camera": name or "observation",
+        "timestamp": time.time(),
+        "width": int(image.shape[1]),
+        "height": int(image.shape[0]),
+        "src": f"data:image/jpeg;base64,{encoded}",
+    }
 
 
 def _summarize_payload(obj: Any, depth: int = 0) -> Any:
