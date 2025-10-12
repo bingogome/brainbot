@@ -105,11 +105,8 @@ class VisualizationServer:
         ]
 
         previews = self._snapshot_camera_frames()
-        inline_previews = _extract_inline_previews(observation)
-        if inline_previews:
-            merged: dict[str, Any] = dict(inline_previews)
-            merged.update(previews)
-            previews = merged
+        if not previews:
+            previews = _extract_inline_previews(observation)
 
         with self._lock:
             self._data = {
