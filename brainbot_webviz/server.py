@@ -376,7 +376,7 @@ _DASHBOARD_HTML = """
     }
 
     refresh();
-    setInterval(refresh, 1000);
+    setInterval(refresh, 100);
   </script>
 </body>
 </html>
