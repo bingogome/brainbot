@@ -220,6 +220,8 @@ def _encode_inline_frame(name: str, frame: np.ndarray) -> dict[str, Any] | None:
             image = np.squeeze(image, axis=2)
         elif image.shape[2] == 4:
             image = image[..., :3]
+        else:
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     if image.ndim == 2:
         image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     success, buffer = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 75])

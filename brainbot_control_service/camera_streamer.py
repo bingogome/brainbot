@@ -72,6 +72,8 @@ def _encode_frame(frame: np.ndarray, name: str, timestamp: float, quality: int) 
         image = np.clip(image, 0, 255).astype(np.uint8)
     if image.ndim == 2:
         image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    elif image.ndim == 3 and image.shape[2] == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     success, buffer = cv2.imencode('.jpg', image, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
     if not success:
         return None
