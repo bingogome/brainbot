@@ -22,7 +22,7 @@ class _CameraWorker:
     topic: bytes
     min_interval: float
     quality: int
-    enqueue: Callable[[bytes, bytes], None]
+    enqueue: Callable[[tuple[bytes, bytes]], None]
 
     def __post_init__(self) -> None:
         self._latest = collections.deque(maxlen=1)
@@ -62,7 +62,7 @@ class _CameraWorker:
             if payload is None:
                 continue
             message = msgpack.packb(payload, use_bin_type=True)
-            self.enqueue(self.topic, message)
+            self.enqueue((self.topic, message))
             self._last_emit = float(payload.get("timestamp", time.time()))
 
 
