@@ -4,7 +4,8 @@ import collections
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any
+import queue
+from typing import Any, Callable
 
 import cv2
 import msgpack
@@ -21,7 +22,7 @@ class _CameraWorker:
     topic: bytes
     min_interval: float
     quality: int
-    socket: zmq.Socket
+    enqueue: Callable[[bytes, bytes], None]
 
     def __post_init__(self) -> None:
         self._latest = collections.deque(maxlen=1)
@@ -61,12 +62,8 @@ class _CameraWorker:
             if payload is None:
                 continue
             message = msgpack.packb(payload, use_bin_type=True)
-            try:
-                self.socket.send_multipart([self.topic, message], zmq.NOBLOCK)
-                self._last_emit = float(payload.get("timestamp", time.time()))
-            except zmq.Again:
-                # Drop frame if subscribers are slow
-                continue
+            self.enqueue(self.topic, message)
+            self._last_emit = float(payload.get("timestamp", time.time()))
 
 
 def _encode_frame(frame: np.ndarray, name: str, timestamp: float, quality: int) -> dict[str, Any] | None:
@@ -116,6 +113,10 @@ class CameraStreamer:
         self._context = zmq.Context.instance()
         self._socket = self._context.socket(zmq.PUB)
         self._socket.bind(f"tcp://{config.host}:{config.port}")
+        self._queue: queue.Queue[tuple[bytes, bytes]] = queue.Queue()
+        self._stop = threading.Event()
+        self._publisher_thread = threading.Thread(target=self._publisher_loop, daemon=True)
+        self._publisher_thread.start()
         self._workers: list[_CameraWorker] = []
         for source_cfg in config.sources:
             min_interval = 1.0 / source_cfg.fps if source_cfg.fps else 0.0
@@ -127,9 +128,20 @@ class CameraStreamer:
                 topic=topic,
                 min_interval=min_interval,
                 quality=quality,
-                socket=self._socket,
+                enqueue=self._queue.put,
             )
             self._workers.append(worker)
+
+    def _publisher_loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                topic, message = self._queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                self._socket.send_multipart([topic, message], zmq.NOBLOCK)
+            except zmq.Again:
+                continue
 
     def publish(self, observation: dict[str, Any]) -> None:
         if not self._workers:
@@ -146,12 +158,16 @@ class CameraStreamer:
             worker.submit(frame)
 
     def close(self) -> None:
+        self._stop.set()
         for worker in self._workers:
             worker.stop()
         self._workers.clear()
         if getattr(self, "_socket", None) is not None:
             self._socket.close(0)
             self._socket = None
+        if getattr(self, "_publisher_thread", None):
+            self._publisher_thread.join(timeout=1.0)
+            self._publisher_thread = None
 
     def __del__(self) -> None:
         try:
