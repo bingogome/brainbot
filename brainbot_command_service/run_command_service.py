@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import zmq
 from pathlib import Path
 
 try:
@@ -68,8 +69,13 @@ def main(argv: list[str] | None = None) -> None:
         api_token=ai_cfg.api_token,
     )
     try:
+        if ai_cfg.timeout_ms:
+            ai_client.socket.setsockopt(zmq.RCVTIMEO, ai_cfg.timeout_ms)
+            ai_client.socket.setsockopt(zmq.SNDTIMEO, ai_cfg.timeout_ms)
         if not ai_client.ping():
             logger.warning("GR00T inference server at %s:%s did not respond to ping", ai_cfg.host, ai_cfg.port)
+    except zmq.error.Again:
+        logger.warning("GR00T inference server ping timed out (host=%s port=%s)", ai_cfg.host, ai_cfg.port)
     except Exception as exc:
         logger.warning("Could not ping GR00T inference server (%s)", exc)
     ai_provider = AICommandProvider(
