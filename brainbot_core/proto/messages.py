@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 import time
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from typing import Any, Literal, Mapping
 
 import msgpack
@@ -35,35 +37,60 @@ class StatusMessage:
     version: int = 1
 
 
-def _to_builtin(value: Any) -> Any:
+_NDARRAY_FLAG = "__ndarray__"
+_NDARRAY_BUFFER = "npy"
+
+
+def _normalize(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return {str(k): _to_builtin(v) for k, v in value.items()}
+        return {str(k): _normalize(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_to_builtin(v) for v in value]
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, (int, float, str, bool)) or value is None:
-        return value
-    if hasattr(value, "tolist"):
-        return value.tolist()
-    if hasattr(value, "item"):
-        try:
-            item = value.item()
-        except Exception:
-            return value
-        if isinstance(item, (int, float, bool)):
-            return float(item) if isinstance(item, (int, float)) else item
+        return [_normalize(v) for v in value]
+    if isinstance(value, (set, frozenset)):
+        return [_normalize(v) for v in sorted(value, key=lambda x: str(x))]
+    if hasattr(value, "__fspath__"):
+        return str(value)
+    if isinstance(value, bytearray):
+        return bytes(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, np.generic):
+        return value.item()
     return value
+
+
+def _msgpack_encode(obj: Any) -> Any:
+    if isinstance(obj, np.ndarray):
+        buffer = io.BytesIO()
+        np.save(buffer, obj, allow_pickle=False)
+        return {_NDARRAY_FLAG: True, _NDARRAY_BUFFER: buffer.getvalue()}
+    if isinstance(obj, np.generic):
+        return obj.item()
+    raise TypeError(f"Unsupported type for message serialization: {type(obj).__name__}")
+
+
+def _msgpack_decode(obj: Any) -> Any:
+    if isinstance(obj, Mapping) and obj.get(_NDARRAY_FLAG):
+        data = obj.get(_NDARRAY_BUFFER)
+        if not isinstance(data, (bytes, bytearray)):
+            raise TypeError("Invalid ndarray payload")
+        buffer = io.BytesIO(data)
+        return np.load(buffer, allow_pickle=False)
+    return obj
 
 
 class MessageSerializer:
     @staticmethod
     def dump(message: ObservationMessage | ActionMessage | StatusMessage) -> bytes:
-        return msgpack.packb(MessageSerializer.to_dict(message), use_bin_type=True)
+        return msgpack.packb(
+            MessageSerializer.to_dict(message),
+            use_bin_type=True,
+            default=_msgpack_encode,
+        )
 
     @staticmethod
     def load(payload: bytes) -> ObservationMessage | ActionMessage | StatusMessage:
-        data = msgpack.unpackb(payload, raw=False)
+        data = msgpack.unpackb(payload, raw=False, object_hook=_msgpack_decode)
         return MessageSerializer.from_dict(data)
 
     @staticmethod
@@ -71,11 +98,11 @@ class MessageSerializer:
         data = asdict(message)
         data["message_type"] = message.__class__.__name__.removesuffix("Message").lower()
         if "payload" in data:
-            data["payload"] = _to_builtin(data["payload"])
+            data["payload"] = _normalize(data["payload"])
         if "actions" in data:
-            data["actions"] = _to_builtin(data["actions"])
+            data["actions"] = _normalize(data["actions"])
         if "metadata" in data:
-            data["metadata"] = _to_builtin(data["metadata"])
+            data["metadata"] = _normalize(data["metadata"])
         return data
 
     @staticmethod

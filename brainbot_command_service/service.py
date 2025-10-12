@@ -18,7 +18,7 @@ class CommandService(BaseInferenceServer):
         host: str = "*",
         port: int = 5555,
         api_token: str | None = None,
-        exchange_hook: Callable[[dict[str, Any], dict[str, Any]], None] | None = None,
+        exchange_hook: Callable[[dict[str, Any], dict[str, Any], str], None] | None = None,
     ):
         super().__init__(host=host, port=port, api_token=api_token)
         if default_key not in providers:

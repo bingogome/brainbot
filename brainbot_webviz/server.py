@@ -4,11 +4,13 @@ import base64
 import json
 import threading
 import time
+from collections.abc import Mapping
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
 import msgpack
+import numpy as np
 import zmq
 
 
@@ -82,6 +84,7 @@ class VisualizationServer:
             self._camera_subscriber.stop()
 
     def update(self, observation: dict[str, Any], action: dict[str, Any], mode: str) -> None:
+        observation_snapshot = _summarize_payload(observation)
         clean_action = _sanitize_payload(action)
 
         numeric_values = _extract_numeric(action)
@@ -100,7 +103,7 @@ class VisualizationServer:
 
         with self._lock:
             self._data = {
-                "observation": {},
+                "observation": observation_snapshot,
                 "action": clean_action,
                 "timestamp": entry["timestamp"],
                 "mode": mode,
@@ -158,6 +161,30 @@ def _extract_numeric(action: dict[str, Any]) -> dict[str, float]:
         except (TypeError, ValueError):
             continue
     return numeric
+
+
+def _summarize_payload(obj: Any, depth: int = 0) -> Any:
+    if depth >= 3:
+        return "..."
+    if isinstance(obj, np.ndarray):
+        return {
+            "type": "ndarray",
+            "shape": list(obj.shape),
+            "dtype": str(obj.dtype),
+        }
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, Mapping):
+        return {str(key): _summarize_payload(value, depth + 1) for key, value in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        max_items = 8
+        items = [_summarize_payload(value, depth + 1) for value in obj[:max_items]]
+        if len(obj) > max_items:
+            items.append("...")
+        return items
+    if isinstance(obj, (bytes, bytearray)):
+        return f"<bytes:{len(obj)}>"
+    return obj
 
 
 _DASHBOARD_HTML = """
