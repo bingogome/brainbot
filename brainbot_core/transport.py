@@ -204,8 +204,15 @@ class BaseZMQClient:
         if self.api_token:
             request["api_token"] = self.api_token
 
-        self.socket.send(MsgSerializer.to_bytes(request))
-        message = self.socket.recv()
+        while True:
+            try:
+                self.socket.send(MsgSerializer.to_bytes(request))
+                message = self.socket.recv()
+                break
+            except zmq.error.ZMQError:
+                self._init_socket()
+                continue
+
         response = MsgSerializer.from_bytes(message)
 
         if "error" in response:
@@ -217,6 +224,13 @@ class BaseZMQClient:
             self.socket.close(0)
         except Exception:
             pass
+        try:
+            self.context.term()
+        except Exception:
+            pass
+
+    def close(self) -> None:
+        self.__del__()
 
 
 class ActionInferenceClient(BaseZMQClient):

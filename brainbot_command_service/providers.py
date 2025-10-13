@@ -136,12 +136,14 @@ class RemoteTeleopCommandProvider(CommandProvider):
             self._client = RemoteTeleopClient(
                 host=self.host, port=self.port, timeout_ms=self.timeout_ms, api_token=self.api_token
             )
-            if not self._client.ping():
-                raise ConnectionError(f"Failed to reach teleop server {self.host}:{self.port}")
+        else:
+            self._client._init_socket()
+        if not self._client.ping():
+            raise ConnectionError(f"Failed to reach teleop server {self.host}:{self.port}")
 
     def shutdown(self) -> None:
         if self._client is not None:
-            self._client.socket.close(0)
+            self._client.close()
             self._client = None
 
     def compute_command(self, observation: ObservationMessage) -> ActionMessage:

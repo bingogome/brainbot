@@ -39,6 +39,12 @@ class CommandChannelClient(BaseZMQClient):
                     raise TimeoutError("Action request timed out") from exc
                 self._init_socket()
                 continue
+            except zmq.error.ZMQError as exc:
+                attempt += 1
+                if attempt > self.max_retries:
+                    raise RuntimeError("Action request failed") from exc
+                self._init_socket()
+                continue
             if "error" in response:
                 raise RuntimeError(f"Command service error: {response['error']}")
             try:

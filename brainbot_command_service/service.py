@@ -46,7 +46,7 @@ class CommandService(BaseZMQServer):
         with self._lock:
             key = self._active_key or self._default_key
             provider = self._providers[key]
-        action = provider.compute_command(observation)
+            action = provider.compute_command(observation)
         obs_dict = MessageSerializer.to_dict(observation)
         action_dict = MessageSerializer.to_dict(action)
         if self._exchange_hook:
