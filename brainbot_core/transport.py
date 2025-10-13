@@ -204,14 +204,8 @@ class BaseZMQClient:
         if self.api_token:
             request["api_token"] = self.api_token
 
-        while True:
-            try:
-                self.socket.send(MsgSerializer.to_bytes(request))
-                message = self.socket.recv()
-                break
-            except zmq.error.ZMQError:
-                self._init_socket()
-                continue
+        self.socket.send(MsgSerializer.to_bytes(request))
+        message = self.socket.recv()
 
         response = MsgSerializer.from_bytes(message)
 

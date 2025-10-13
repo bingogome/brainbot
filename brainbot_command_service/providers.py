@@ -142,9 +142,9 @@ class RemoteTeleopCommandProvider(CommandProvider):
             raise ConnectionError(f"Failed to reach teleop server {self.host}:{self.port}")
 
     def shutdown(self) -> None:
-        if self._client is not None:
-            self._client.close()
-            self._client = None
+        # Keep the remote connection alive; shutdown is a no-op to
+        # avoid closing sockets that might still be in use by ZMQ.
+        return None
 
     def compute_command(self, observation: ObservationMessage) -> ActionMessage:
         if self._client is None:
