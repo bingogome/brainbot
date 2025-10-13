@@ -66,59 +66,9 @@ class AICommandProvider(CommandProvider):
             return ActionMessage(actions={})
         obs_payload = self._observation_adapter(observation)
         obs_payload[self.instruction_key] = self._instruction
-        TypeInspector.report_types(obs_payload)
-        if ImageInspector.has_pil(obs_payload):
-            ImageInspector.report(obs_payload)
+        obs_payload.setdefault("annotation.human.task_description", self._instruction)
         action_dict = self.client.get_action(obs_payload)
         return ActionMessage(actions=self._action_adapter(action_dict))
-
-
-class ImageInspector:
-    @staticmethod
-    def has_pil(value: Any) -> bool:
-        try:
-            from PIL import Image  # noqa: WPS433
-        except Exception:
-            return False
-
-        if isinstance(value, Image.Image):
-            return True
-        if isinstance(value, dict):
-            return any(ImageInspector.has_pil(v) for v in value.values())
-        if isinstance(value, (list, tuple)):
-            return any(ImageInspector.has_pil(v) for v in value)
-        return False
-
-    @staticmethod
-    def report(value: Any, path: str = "root") -> None:
-        try:
-            from PIL import Image
-        except Exception:
-            return
-
-        if isinstance(value, Image.Image):
-            print(f"[ai-adapter] PIL image detected at {path}")
-            return
-        if isinstance(value, dict):
-            for key, val in value.items():
-                ImageInspector.report(val, f"{path}.{key}")
-        elif isinstance(value, (list, tuple)):
-            for idx, val in enumerate(value):
-                ImageInspector.report(val, f"{path}[{idx}]")
-
-
-class TypeInspector:
-    @staticmethod
-    def report_types(value: Any, path: str = "root", depth: int = 0, max_depth: int = 3) -> None:
-        if depth > max_depth:
-            return
-        print(f"[ai-adapter] {path}: {type(value)}")
-        if isinstance(value, dict):
-            for key, val in value.items():
-                TypeInspector.report_types(val, f"{path}.{key}", depth + 1, max_depth)
-        elif isinstance(value, (list, tuple)):
-            for idx, val in enumerate(value[:5]):
-                TypeInspector.report_types(val, f"{path}[{idx}]", depth + 1, max_depth)
 
 
 class LocalTeleopCommandProvider(CommandProvider):

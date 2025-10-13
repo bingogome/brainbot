@@ -39,6 +39,9 @@ class AIClientConfig:
     timeout_ms: int = 1500
     api_token: str | None = None
     instruction_key: str = "language_instruction"
+    modality_config_path: str | None = None
+    camera_keys: list[str] | None = None
+    state_keys: list[str] | None = None
 
 
 @dataclass(slots=True)

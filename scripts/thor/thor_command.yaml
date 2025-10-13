@@ -22,6 +22,21 @@ ai:
   port: 5555
   timeout_ms: 2000
   instruction_key: language_instruction
+  modality_config_path: /workspace/Isaac-GR00T/examples/SO-100/bi_so101_modality.json
+  camera_keys: [left, right, top]
+  state_keys:
+    - left_shoulder_pan.pos
+    - left_shoulder_lift.pos
+    - left_elbow_flex.pos
+    - left_wrist_flex.pos
+    - left_wrist_roll.pos
+    - left_gripper.pos
+    - right_shoulder_pan.pos
+    - right_shoulder_lift.pos
+    - right_elbow_flex.pos
+    - right_wrist_flex.pos
+    - right_wrist_roll.pos
+    - right_gripper.pos
 
 network:
   host: 127.0.0.1

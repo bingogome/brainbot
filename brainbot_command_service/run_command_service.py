@@ -36,12 +36,13 @@ from . import (
     ModeManager,
     RemoteTeleopCommandProvider,
 )
+from .gr00t_modality import Gr00TObservationMapper
 
 
 logger = logging.getLogger(__name__)
 
 
-def _make_ai_observation_adapter():
+def _make_basic_ai_observation_adapter():
     def _normalize(value: Any) -> Any:
         if isinstance(value, np.ndarray) or np.isscalar(value):
             return value
@@ -138,6 +139,29 @@ def _make_ai_observation_adapter():
     return adapter
 
 
+def _build_ai_observation_adapter(ai_cfg: AIClientConfig):
+    if ai_cfg.modality_config_path and ai_cfg.state_keys:
+        mapper = Gr00TObservationMapper(
+            Path(ai_cfg.modality_config_path),
+            ai_cfg.state_keys,
+            ai_cfg.camera_keys,
+        )
+        logger.info(
+            "GR00T modality adapter enabled (config=%s)", ai_cfg.modality_config_path
+        )
+
+        def adapter(observation: ObservationMessage) -> dict[str, Any]:
+            return mapper.build(observation.payload)
+
+        return adapter
+    if ai_cfg.modality_config_path and not ai_cfg.state_keys:
+        logger.warning(
+            "modality_config_path supplied but state_keys missing; falling back to basic adapter"
+        )
+
+    return _make_basic_ai_observation_adapter()
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=Path)
@@ -188,7 +212,7 @@ def main(argv: list[str] | None = None) -> None:
     ai_provider = AICommandProvider(
         client=ai_client,
         instruction_key=ai_cfg.instruction_key,
-        observation_adapter=_make_ai_observation_adapter(),
+        observation_adapter=_build_ai_observation_adapter(ai_cfg),
     )
     providers["infer"] = ai_provider
     ai_key: str | None = "infer"
