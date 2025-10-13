@@ -71,6 +71,10 @@ class CommandService(BaseZMQServer):
             self._shutdown_requested = True
         return self._shutdown_notified
 
+    def _post_send(self, endpoint: str, response: dict[str, Any]) -> None:
+        if self._shutdown_requested and self._shutdown_notified.is_set():
+            self.running = False
+
     def available_providers(self) -> list[str]:
         return list(self._providers.keys())
 

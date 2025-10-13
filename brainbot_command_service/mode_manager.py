@@ -85,4 +85,3 @@ class ModeManager:
                 print("[mode-manager] robot acknowledged shutdown")
             else:
                 print("[mode-manager] no shutdown acknowledgement from robot (timeout)")
-            self._service.close()
