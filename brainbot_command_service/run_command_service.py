@@ -110,7 +110,7 @@ def _make_ai_observation_adapter():
         for name, array in cameras.items():
             result[f"video.{name}"] = array
 
-        return result
+        return _normalize(result)
 
     return adapter
 
