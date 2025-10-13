@@ -66,8 +66,44 @@ class AICommandProvider(CommandProvider):
             return ActionMessage(actions={})
         obs_payload = self._observation_adapter(observation)
         obs_payload[self.instruction_key] = self._instruction
+        if ImageInspector.has_pil(obs_payload):
+            ImageInspector.report(obs_payload)
         action_dict = self.client.get_action(obs_payload)
         return ActionMessage(actions=self._action_adapter(action_dict))
+
+
+class ImageInspector:
+    @staticmethod
+    def has_pil(value: Any) -> bool:
+        try:
+            from PIL import Image  # noqa: WPS433
+        except Exception:
+            return False
+
+        if isinstance(value, Image.Image):
+            return True
+        if isinstance(value, dict):
+            return any(ImageInspector.has_pil(v) for v in value.values())
+        if isinstance(value, (list, tuple)):
+            return any(ImageInspector.has_pil(v) for v in value)
+        return False
+
+    @staticmethod
+    def report(value: Any, path: str = "root") -> None:
+        try:
+            from PIL import Image
+        except Exception:
+            return
+
+        if isinstance(value, Image.Image):
+            print(f"[ai-adapter] PIL image detected at {path}")
+            return
+        if isinstance(value, dict):
+            for key, val in value.items():
+                ImageInspector.report(val, f"{path}.{key}")
+        elif isinstance(value, (list, tuple)):
+            for idx, val in enumerate(value):
+                ImageInspector.report(val, f"{path}[{idx}]")
 
 
 class LocalTeleopCommandProvider(CommandProvider):
