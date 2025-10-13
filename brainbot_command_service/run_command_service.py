@@ -53,6 +53,17 @@ def _make_ai_observation_adapter():
             return np.asarray(value)
         return value
 
+    def _strip_images(value: Any) -> Any:
+        if isinstance(value, np.ndarray) or np.isscalar(value):
+            return value
+        if Image is not None and isinstance(value, Image.Image):
+            return np.asarray(value)
+        if isinstance(value, Mapping):
+            return {str(k): _strip_images(v) for k, v in value.items()}
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            return [_strip_images(v) for v in value]
+        return value
+
     def adapter(observation: ObservationMessage) -> dict[str, Any]:
         payload = _normalize(observation.payload)
         result: dict[str, Any] = {}
@@ -110,7 +121,7 @@ def _make_ai_observation_adapter():
         for name, array in cameras.items():
             result[f"video.{name}"] = array
 
-        return _normalize(result)
+        return _strip_images(_normalize(result))
 
     return adapter
 
