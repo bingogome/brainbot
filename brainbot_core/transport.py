@@ -218,6 +218,10 @@ class BaseZMQClient:
             self.socket.close(0)
         except Exception:
             pass
+        try:
+            self.context.term()
+        except Exception:
+            pass
 
     def close(self) -> None:
         self.__del__()
