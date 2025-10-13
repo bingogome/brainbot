@@ -64,6 +64,16 @@ def _make_ai_observation_adapter():
             return [_strip_images(v) for v in value]
         return value
 
+    def _ensure_no_pil(value: Any, path: str = "root") -> None:
+        if Image is not None and isinstance(value, Image.Image):
+            raise TypeError(f"PIL image detected at {path}")
+        if isinstance(value, Mapping):
+            for key, val in value.items():
+                _ensure_no_pil(val, f"{path}.{key}")
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            for idx, val in enumerate(value):
+                _ensure_no_pil(val, f"{path}[{idx}]")
+
     def adapter(observation: ObservationMessage) -> dict[str, Any]:
         payload = _normalize(observation.payload)
         result: dict[str, Any] = {}
@@ -121,7 +131,9 @@ def _make_ai_observation_adapter():
         for name, array in cameras.items():
             result[f"video.{name}"] = array
 
-        return _strip_images(_normalize(result))
+        sanitized = _strip_images(_normalize(result))
+        _ensure_no_pil(sanitized)
+        return sanitized
 
     return adapter
 
