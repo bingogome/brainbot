@@ -46,17 +46,41 @@ def _make_ai_observation_adapter():
 
         robot = payload.get("robot")
         cameras: dict[str, np.ndarray] = {}
+
+        def _coerce_frame(value: Any) -> np.ndarray | None:
+            try:
+                array = np.asarray(value)
+            except Exception:
+                return None
+            if array.ndim == 0:
+                return None
+            if array.ndim == 2:
+                array = array[:, :, None]
+            if array.ndim == 3:
+                array = array[None, ...]
+            if array.ndim not in (4, 5):
+                return None
+            if array.dtype != np.uint8:
+                if np.issubdtype(array.dtype, np.floating):
+                    scaled = array if array.max() > 1.0 else array * 255.0
+                    array = np.clip(scaled, 0, 255).astype(np.uint8)
+                else:
+                    array = np.clip(array, 0, 255).astype(np.uint8)
+            return array
+
         if isinstance(robot, dict):
             robot_data = dict(robot)
             cam_group = robot_data.pop("cameras", None)
             if isinstance(cam_group, dict):
-                cameras.update(cam_group)
-            else:
-                for key in list(robot_data.keys()):
-                    value = robot_data[key]
-                    if isinstance(value, np.ndarray):
-                        cameras[key] = value
-                        robot_data.pop(key)
+                for key, value in cam_group.items():
+                    array = _coerce_frame(value)
+                    if array is not None:
+                        cameras[key] = array
+            for key in list(robot_data.keys()):
+                array = _coerce_frame(robot_data[key])
+                if array is not None:
+                    cameras[key] = array
+                    robot_data.pop(key)
             result["robot"] = robot_data
         elif robot is not None:
             result["robot"] = robot
@@ -66,20 +90,7 @@ def _make_ai_observation_adapter():
             if key not in {"robot", "base"}:
                 result[key] = value
 
-        for name, frame in cameras.items():
-            array = np.asarray(frame)
-            if array.ndim == 3:
-                array = array[None, ...]
-            elif array.ndim == 2:
-                array = array[None, ..., None]
-            if array.ndim not in (4, 5):
-                continue
-            if array.dtype != np.uint8:
-                if np.issubdtype(array.dtype, np.floating):
-                    scaled = array if array.max() > 1.0 else array * 255.0
-                    array = np.clip(scaled, 0, 255).astype(np.uint8)
-                else:
-                    array = np.clip(array, 0, 255).astype(np.uint8)
+        for name, array in cameras.items():
             result[f"video.{name}"] = array
 
         return result
