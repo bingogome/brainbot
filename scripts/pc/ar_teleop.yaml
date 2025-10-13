@@ -4,6 +4,7 @@ teleop:
   config:
     type: ar_controller
     id: quest3
+    bi_controller: false
 network:
   host: 0.0.0.0
   port: 7002
