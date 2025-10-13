@@ -23,6 +23,11 @@ class IdleModeEvent(ModeEvent):
     reason: str | None = None
 
 
+@dataclass(slots=True)
+class ShutdownModeEvent(ModeEvent):
+    reason: str | None = None
+
+
 ModeEventListener = Callable[[ModeEvent], None]
 
 

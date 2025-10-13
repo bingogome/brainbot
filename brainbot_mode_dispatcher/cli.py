@@ -4,7 +4,14 @@ import json
 import queue
 import threading
 
-from .events import IdleModeEvent, InferenceModeEvent, ModeEventDispatcher, ModeEventListener, TeleopModeEvent
+from .events import (
+    IdleModeEvent,
+    InferenceModeEvent,
+    ModeEventDispatcher,
+    ModeEventListener,
+    ShutdownModeEvent,
+    TeleopModeEvent,
+)
 
 
 class CLIModeDispatcher(ModeEventDispatcher):
@@ -78,5 +85,8 @@ class CLIModeDispatcher(ModeEventDispatcher):
             return
         if "idle" in data:
             queue_obj.put(IdleModeEvent(reason=str(data["idle"])) if data["idle"] else IdleModeEvent())
+            return
+        if "shutdown" in data:
+            queue_obj.put(ShutdownModeEvent(reason=str(data["shutdown"])) if data["shutdown"] else ShutdownModeEvent())
             return
         print(f"[dispatcher] unsupported command: {data}")

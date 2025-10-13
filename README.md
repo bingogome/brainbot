@@ -77,6 +77,7 @@ python brainbot/scripts/pc/run_teleop_server.py \
   - `{"teleop": "leader"}`
   - `{"infer": "Pick up the block using the left arm and transfer!"}`
   - `{"idle": ""}`
+  - `{"shutdown": ""}` (gracefully shuts down robot controller, then the hub)
 - View live command traces, numeric history, and camera previews at `http://<edge-ip>:8080/`.
 - `run_thor_preview.py` keeps WebViz and camera streams active before the robot agent starts.
 

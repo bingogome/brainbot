@@ -6,7 +6,7 @@ from typing import Mapping
 
 from brainbot_core.proto import ActionMessage
 
-from .command_client import CommandChannelClient
+from .command_client import CommandChannelClient, ShutdownRequested
 from .service import RobotControlService
 from .camera_streamer import CameraStreamer
 
@@ -43,6 +43,10 @@ class CommandLoop:
             try:
                 action = self.client.compute_action(observation)
                 self._missed_actions = 0
+            except ShutdownRequested:
+                print("[command-loop] shutdown requested by command service")
+                self.stop()
+                break
             except TimeoutError:
                 self._missed_actions += 1
                 if self._missed_actions > self.max_missed_actions:

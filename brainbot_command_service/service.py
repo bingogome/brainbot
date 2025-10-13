@@ -4,7 +4,7 @@ import threading
 from typing import Any, Callable, Mapping
 
 from brainbot_core.transport import BaseZMQServer
-from brainbot_core.proto import MessageSerializer
+from brainbot_core.proto import MessageSerializer, StatusMessage
 
 from .providers import CommandProvider
 
@@ -30,6 +30,8 @@ class CommandService(BaseZMQServer):
         self._exchange_hook = exchange_hook
         self._last_config: dict[str, Any] = {}
         self._current_mode = default_key
+        self._shutdown_requested = False
+        self._shutdown_notified = threading.Event()
         self.register_endpoint("get_action", self._handle_get_action)
         self.register_endpoint("sync_config", self._handle_sync_config)
 
@@ -44,9 +46,13 @@ class CommandService(BaseZMQServer):
     def _handle_get_action(self, data: dict[str, Any]) -> dict[str, Any]:
         observation = MessageSerializer.ensure_observation(data["observation"])
         with self._lock:
+            if self._shutdown_requested:
+                status_msg = StatusMessage(status="shutdown")
+                self._shutdown_notified.set()
+                return {"status": MessageSerializer.to_dict(status_msg)}
             key = self._active_key or self._default_key
             provider = self._providers[key]
-            action = provider.compute_command(observation)
+        action = provider.compute_command(observation)
         obs_dict = MessageSerializer.to_dict(observation)
         action_dict = MessageSerializer.to_dict(action)
         if self._exchange_hook:
@@ -59,6 +65,11 @@ class CommandService(BaseZMQServer):
     def _handle_sync_config(self, config: dict[str, Any]) -> dict[str, Any]:
         self._last_config = config
         return {"status": "ok"}
+
+    def initiate_shutdown(self) -> threading.Event:
+        with self._lock:
+            self._shutdown_requested = True
+        return self._shutdown_notified
 
     def available_providers(self) -> list[str]:
         return list(self._providers.keys())

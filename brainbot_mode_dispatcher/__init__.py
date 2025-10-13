@@ -1,4 +1,12 @@
-from .events import IdleModeEvent, InferenceModeEvent, ModeEvent, ModeEventDispatcher, ModeEventListener, TeleopModeEvent
+from .events import (
+    IdleModeEvent,
+    InferenceModeEvent,
+    ModeEvent,
+    ModeEventDispatcher,
+    ModeEventListener,
+    ShutdownModeEvent,
+    TeleopModeEvent,
+)
 from .cli import CLIModeDispatcher
 
 __all__ = [
@@ -8,5 +16,6 @@ __all__ = [
     "ModeEvent",
     "ModeEventDispatcher",
     "ModeEventListener",
+    "ShutdownModeEvent",
     "TeleopModeEvent",
 ]

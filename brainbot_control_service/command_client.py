@@ -6,7 +6,12 @@ import zmq
 
 from brainbot_core.transport import BaseZMQClient
 
-from brainbot_core.proto import ActionMessage, MessageSerializer, ObservationMessage
+from brainbot_core.proto import ActionMessage, MessageSerializer, ObservationMessage, StatusMessage
+
+
+class ShutdownRequested(Exception):
+    """Raised when the command server requests a shutdown."""
+
 
 
 class CommandChannelClient(BaseZMQClient):
@@ -45,6 +50,10 @@ class CommandChannelClient(BaseZMQClient):
                     raise RuntimeError("Action request failed") from exc
                 self._init_socket()
                 continue
+            if "status" in response:
+                status_msg = MessageSerializer.ensure_status(response["status"])
+                if status_msg.status.lower() == "shutdown":
+                    raise ShutdownRequested(status_msg.status)
             if "error" in response:
                 raise RuntimeError(f"Command service error: {response['error']}")
             try:
