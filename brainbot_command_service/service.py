@@ -16,7 +16,7 @@ class CommandService(BaseInferenceServer):
         providers: Mapping[str, CommandProvider],
         default_key: str,
         host: str = "*",
-        port: int = 5555,
+        port: int = 6000,
         api_token: str | None = None,
         exchange_hook: Callable[[dict[str, Any], dict[str, Any], str], None] | None = None,
     ):

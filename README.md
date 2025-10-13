@@ -91,6 +91,9 @@ teleops:
     port: 7001
 ai:
   host: 127.0.0.1
+  port: 5555
+network:
+  host: 127.0.0.1
   port: 6000
 webviz:
   host: 0.0.0.0
@@ -125,7 +128,7 @@ robot:
     top:   {type: opencv, index_or_path: 4, width: 640, height: 480, fps: 15, enable_mjpeg: true}
 network:
   host: 127.0.0.1
-  port: 5555
+  port: 6000
 loop_hz: 40
 max_missed_actions: 2
 calibrate_on_start: true

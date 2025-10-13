@@ -28,7 +28,7 @@ robot:
       enable_mjpeg: true
 network:
   host: 127.0.0.1
-  port: 5555
+  port: 6000
 loop_hz: 40
 max_missed_actions: 2
 fallback_action: {}

@@ -14,7 +14,7 @@ from lerobot.teleoperators.config import TeleoperatorConfig
 @dataclass(slots=True)
 class NetworkConfig:
     host: str = "127.0.0.1"
-    port: int = 5555
+    port: int = 6000
     timeout_ms: int = 1500
     api_token: str | None = None
 
@@ -35,7 +35,7 @@ class EdgeControlConfig:
 @dataclass(slots=True)
 class AIClientConfig:
     host: str = "127.0.0.1"
-    port: int = 6000
+    port: int = 5555
     timeout_ms: int = 1500
     api_token: str | None = None
     instruction_key: str = "language_instruction"

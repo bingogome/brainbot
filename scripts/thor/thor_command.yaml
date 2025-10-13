@@ -19,13 +19,13 @@ teleops:
 
 ai:
   host: 127.0.0.1        # GR00T running locally on Thor
-  port: 6000
+  port: 5555
   timeout_ms: 2000
   instruction_key: language_instruction
 
 network:
   host: 127.0.0.1
-  port: 5555
+  port: 6000
 webviz:
   host: 0.0.0.0
   port: 8080
