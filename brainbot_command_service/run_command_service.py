@@ -4,9 +4,15 @@ import argparse
 import logging
 from pathlib import Path
 from typing import Any
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import zmq
+
+try:
+    from PIL import Image
+except Exception:  # PIL may be optional
+    Image = None  # type: ignore[assignment]
 
 try:
     from lerobot.processor import make_default_processors
@@ -36,8 +42,19 @@ logger = logging.getLogger(__name__)
 
 
 def _make_ai_observation_adapter():
+    def _normalize(value: Any) -> Any:
+        if isinstance(value, np.ndarray) or np.isscalar(value):
+            return value
+        if isinstance(value, Mapping):
+            return {str(k): _normalize(v) for k, v in value.items()}
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            return [_normalize(v) for v in value]
+        if Image is not None and isinstance(value, Image.Image):
+            return np.asarray(value)
+        return value
+
     def adapter(observation: ObservationMessage) -> dict[str, Any]:
-        payload = dict(observation.payload)
+        payload = _normalize(observation.payload)
         result: dict[str, Any] = {}
 
         base = payload.get("base")
