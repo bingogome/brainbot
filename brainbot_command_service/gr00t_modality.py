@@ -55,6 +55,7 @@ class Gr00TObservationMapper:
     def build(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         robot_raw = payload.get("robot")
         robot_data = dict(robot_raw) if isinstance(robot_raw, Mapping) else {}
+        base_raw = payload.get("base")
         camera_group = {}
         cameras_field = robot_data.get("cameras")
         if isinstance(cameras_field, Mapping):
@@ -62,6 +63,8 @@ class Gr00TObservationMapper:
             # keep robot_data intact for downstream use
 
         result: dict[str, Any] = {}
+        if base_raw is not None:
+            result["base"] = base_raw
 
         camera_arrays = {}
         for key in self._camera_keys:
@@ -112,9 +115,7 @@ class Gr00TObservationMapper:
             return None
         if array.ndim == 2:  # grayscale image
             array = array[:, :, None]
-        if array.ndim == 3:
-            array = array[None, ...]
-        if array.ndim != 4:
+        if array.ndim not in (3, 4):
             return None
         if array.dtype != np.uint8:
             if np.issubdtype(array.dtype, np.floating):
