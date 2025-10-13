@@ -7,6 +7,7 @@ from typing import Any
 from collections.abc import Mapping, Sequence
 
 import numpy as np
+import torch
 import zmq
 
 try:
@@ -133,6 +134,20 @@ def _make_ai_observation_adapter():
 
         sanitized = _strip_images(_normalize(result))
         _ensure_no_pil(sanitized)
+
+        # Convert video arrays to torch tensors expected by GR00T policies
+        for key, value in list(sanitized.items()):
+            if key.startswith("video.") and isinstance(value, np.ndarray):
+                array = value
+                if array.ndim == 4:  # [T, H, W, C]
+                    tensor = torch.from_numpy(array).to(torch.float32) / 255.0
+                    tensor = tensor.permute(0, 3, 1, 2)  # [T, C, H, W]
+                elif array.ndim == 5:  # [B, T, H, W, C]
+                    tensor = torch.from_numpy(array).to(torch.float32) / 255.0
+                    tensor = tensor.permute(0, 1, 4, 2, 3)  # [B, T, C, H, W]
+                else:
+                    continue
+                sanitized[key] = tensor
         return sanitized
 
     return adapter
