@@ -151,7 +151,13 @@ def _build_ai_observation_adapter(ai_cfg: AIClientConfig):
         )
 
         def adapter(observation: ObservationMessage) -> dict[str, Any]:
-            return mapper.build(observation.payload)
+            mapped = mapper.build(observation.payload)
+            for key, value in list(mapped.items()):
+                if isinstance(value, np.ndarray):
+                    mapped[key] = value[np.newaxis, ...]
+                else:
+                    mapped[key] = [value]
+            return mapped
 
         return adapter
     if ai_cfg.modality_config_path and not ai_cfg.state_keys:

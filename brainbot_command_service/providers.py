@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from brainbot_core.transport import ActionInferenceClient, BaseZMQClient
+import numpy as np
 import zmq
 
 try:
@@ -66,7 +67,19 @@ class AICommandProvider(CommandProvider):
             return ActionMessage(actions={})
         obs_payload = self._observation_adapter(observation)
         obs_payload[self.instruction_key] = self._instruction
-        obs_payload.setdefault("annotation.human.task_description", self._instruction)
+        desc = obs_payload.get("annotation.human.task_description", self._instruction)
+        if isinstance(desc, (list, tuple)):
+            obs_payload["annotation.human.task_description"] = list(desc)
+        else:
+            obs_payload["annotation.human.task_description"] = [desc]
+        for key, value in list(obs_payload.items()):
+            if isinstance(value, np.ndarray):
+                continue
+            if key.startswith("state.") and isinstance(value, list):
+                continue
+            if isinstance(value, (list, tuple)):
+                continue
+            obs_payload[key] = [value]
         action_dict = self.client.get_action(obs_payload)
         return ActionMessage(actions=self._action_adapter(action_dict))
 

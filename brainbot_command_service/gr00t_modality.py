@@ -54,8 +54,6 @@ class Gr00TObservationMapper:
 
     def build(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         robot_raw = payload.get("robot")
-        base_raw = payload.get("base")
-
         robot_data = dict(robot_raw) if isinstance(robot_raw, Mapping) else {}
         camera_group = {}
         cameras_field = robot_data.get("cameras")
@@ -64,8 +62,6 @@ class Gr00TObservationMapper:
             # keep robot_data intact for downstream use
 
         result: dict[str, Any] = {}
-        if base_raw is not None:
-            result["base"] = base_raw
 
         camera_arrays = {}
         for key in self._camera_keys:
@@ -78,7 +74,7 @@ class Gr00TObservationMapper:
 
         for name, slice_obj in self._state_slices:
             chunk = state_vector[slice_obj]
-            result[f"state.{name}"] = chunk[np.newaxis, ...]
+            result[f"state.{name}"] = chunk.astype(np.float32)
 
         for name, array in camera_arrays.items():
             result[f"video.{name}"] = array
