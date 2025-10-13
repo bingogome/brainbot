@@ -44,6 +44,7 @@ class TeleopActionServer(BaseZMQServer):
             super().run()
         finally:
             self.teleop.disconnect()
+            self.close()
 
     def _handle_get_action(self, data: dict[str, Any]) -> dict[str, Any]:
         obs = data.get("observation", {})

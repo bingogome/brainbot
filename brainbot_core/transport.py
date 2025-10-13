@@ -82,8 +82,9 @@ class BaseZMQServer:
 
     def __init__(self, host: str = "*", port: int = 5555, api_token: str | None = None):
         self.running = True
-        self.context = zmq.Context()
+        self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.REP)
+        self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.bind(f"tcp://{host}:{port}")
         self._endpoints: dict[str, EndpointHandler] = {}
         self.api_token = api_token
@@ -131,12 +132,27 @@ class BaseZMQServer:
                     else handler.handler()
                 )
                 self.socket.send(MsgSerializer.to_bytes(result))
+            except zmq.error.ContextTerminated:
+                break
             except Exception as exc:
+                if not self.running:
+                    break
                 print(f"Error in server: {exc}")
                 import traceback
 
                 print(traceback.format_exc())
-                self.socket.send(MsgSerializer.to_bytes({"error": str(exc)}))
+                try:
+                    self.socket.send(MsgSerializer.to_bytes({"error": str(exc)}))
+                except zmq.error.ZMQError:
+                    break
+
+    def close(self) -> None:
+        self.running = False
+        try:
+            self.socket.close(0)
+        except Exception:
+            pass
+        self.socket = None  # type: ignore[assignment]
 
 
 class BaseZMQClient:
@@ -147,7 +163,7 @@ class BaseZMQClient:
         timeout_ms: int = 15000,
         api_token: str | None = None,
     ):
-        self.context = zmq.Context()
+        self.context = zmq.Context.instance()
         self.host = host
         self.port = port
         self.timeout_ms = timeout_ms
@@ -155,7 +171,17 @@ class BaseZMQClient:
         self._init_socket()
 
     def _init_socket(self):
+        existing = getattr(self, "socket", None)
+        if existing is not None:
+            try:
+                existing.close(0)
+            except Exception:
+                pass
         self.socket = self.context.socket(zmq.REQ)
+        self.socket.setsockopt(zmq.LINGER, 0)
+        if self.timeout_ms:
+            self.socket.setsockopt(zmq.RCVTIMEO, self.timeout_ms)
+            self.socket.setsockopt(zmq.SNDTIMEO, self.timeout_ms)
         self.socket.connect(f"tcp://{self.host}:{self.port}")
 
     def ping(self) -> bool:
@@ -188,11 +214,7 @@ class BaseZMQClient:
 
     def __del__(self):
         try:
-            self.socket.close()
-        except Exception:
-            pass
-        try:
-            self.context.term()
+            self.socket.close(0)
         except Exception:
             pass
 

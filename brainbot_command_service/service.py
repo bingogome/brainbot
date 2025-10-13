@@ -39,6 +39,7 @@ class CommandService(BaseZMQServer):
             super().run()
         finally:
             self._shutdown_active()
+            self.close()
 
     def _handle_get_action(self, data: dict[str, Any]) -> dict[str, Any]:
         observation = MessageSerializer.ensure_observation(data["observation"])
