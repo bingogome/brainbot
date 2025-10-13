@@ -18,7 +18,7 @@ teleops:
   #   timeout_ms: 1000
 
 ai:
-  host: 127.0.0.1        # GR00T running locally on Thor
+  host: 172.17.0.3        # GR00T running in container on Thor
   port: 5555
   timeout_ms: 2000
   instruction_key: language_instruction
