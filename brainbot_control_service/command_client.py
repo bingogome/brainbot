@@ -4,12 +4,12 @@ from typing import Any
 
 import zmq
 
-from gr00t.eval.service import BaseInferenceClient
+from brainbot_core.transport import BaseZMQClient
 
 from brainbot_core.proto import ActionMessage, MessageSerializer, ObservationMessage
 
 
-class CommandChannelClient(BaseInferenceClient):
+class CommandChannelClient(BaseZMQClient):
     def __init__(
         self,
         host: str,
@@ -37,6 +37,12 @@ class CommandChannelClient(BaseInferenceClient):
                 attempt += 1
                 if attempt > self.max_retries:
                     raise TimeoutError("Action request timed out") from exc
+                self._init_socket()
+                continue
+            except zmq.error.ZMQError as exc:
+                attempt += 1
+                if attempt > self.max_retries:
+                    raise RuntimeError("Action request failed") from exc
                 self._init_socket()
                 continue
             if "error" in response:

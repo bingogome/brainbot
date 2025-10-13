@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from gr00t.eval.service import BaseInferenceServer
 from typing import Any
 
 try:
@@ -13,10 +12,11 @@ except ImportError:  # compatibility with newer LeRobot releases
     RobotProcessorPipeline = Any  # type: ignore
 from lerobot.teleoperators.teleoperator import Teleoperator
 
+from brainbot_core.transport import BaseZMQServer
 from brainbot_core.proto import ActionMessage, MessageSerializer
 
 
-class TeleopActionServer(BaseInferenceServer):
+class TeleopActionServer(BaseZMQServer):
     def __init__(
         self,
         teleop: Teleoperator,
@@ -44,6 +44,7 @@ class TeleopActionServer(BaseInferenceServer):
             super().run()
         finally:
             self.teleop.disconnect()
+            self.close()
 
     def _handle_get_action(self, data: dict[str, Any]) -> dict[str, Any]:
         obs = data.get("observation", {})

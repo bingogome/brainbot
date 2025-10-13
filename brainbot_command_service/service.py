@@ -3,14 +3,13 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable, Mapping
 
-from gr00t.eval.service import BaseInferenceServer
-
+from brainbot_core.transport import BaseZMQServer
 from brainbot_core.proto import MessageSerializer
 
 from .providers import CommandProvider
 
 
-class CommandService(BaseInferenceServer):
+class CommandService(BaseZMQServer):
     def __init__(
         self,
         providers: Mapping[str, CommandProvider],
@@ -40,13 +39,14 @@ class CommandService(BaseInferenceServer):
             super().run()
         finally:
             self._shutdown_active()
+            self.close()
 
     def _handle_get_action(self, data: dict[str, Any]) -> dict[str, Any]:
         observation = MessageSerializer.ensure_observation(data["observation"])
         with self._lock:
             key = self._active_key or self._default_key
             provider = self._providers[key]
-        action = provider.compute_command(observation)
+            action = provider.compute_command(observation)
         obs_dict = MessageSerializer.to_dict(observation)
         action_dict = MessageSerializer.to_dict(action)
         if self._exchange_hook:

@@ -47,7 +47,7 @@ Command Providers -> Hub:                   |    Command Consumers:
 ## Typical Workflow
 
 ### Edge Computer (e.g., Jetson)
-1. Run the GR00T policy server (defaults use `127.0.0.1:6000`).
+1. Run the GR00T policy server (defaults use `127.0.0.1:5555`).
 2. Start the command hub (WebViz + GR00T integration are automatic):
    ```bash
    python brainbot/scripts/thor/run_thor_command.py \
