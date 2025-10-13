@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import logging
-import zmq
 from pathlib import Path
+from typing import Any
+
+import numpy as np
+import zmq
 
 try:
     from lerobot.processor import make_default_processors
@@ -13,6 +16,7 @@ from lerobot.teleoperators.utils import make_teleoperator_from_config
 
 from brainbot_core.config import AIClientConfig, ServerRuntimeConfig, WebVizConfig, load_server_config
 from brainbot_core.transport import ActionInferenceClient
+from brainbot_core.proto import ObservationMessage
 from brainbot_mode_dispatcher import CLIModeDispatcher
 
 from brainbot_webviz import VisualizationServer
@@ -29,6 +33,58 @@ from . import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _make_ai_observation_adapter():
+    def adapter(observation: ObservationMessage) -> dict[str, Any]:
+        payload = dict(observation.payload)
+        result: dict[str, Any] = {}
+
+        base = payload.get("base")
+        if base is not None:
+            result["base"] = base
+
+        robot = payload.get("robot")
+        cameras: dict[str, np.ndarray] = {}
+        if isinstance(robot, dict):
+            robot_data = dict(robot)
+            cam_group = robot_data.pop("cameras", None)
+            if isinstance(cam_group, dict):
+                cameras.update(cam_group)
+            else:
+                for key in list(robot_data.keys()):
+                    value = robot_data[key]
+                    if isinstance(value, np.ndarray):
+                        cameras[key] = value
+                        robot_data.pop(key)
+            result["robot"] = robot_data
+        elif robot is not None:
+            result["robot"] = robot
+
+        # Promote any remaining top-level keys (e.g., metadata) unchanged
+        for key, value in payload.items():
+            if key not in {"robot", "base"}:
+                result[key] = value
+
+        for name, frame in cameras.items():
+            array = np.asarray(frame)
+            if array.ndim == 3:
+                array = array[None, ...]
+            elif array.ndim == 2:
+                array = array[None, ..., None]
+            if array.ndim not in (4, 5):
+                continue
+            if array.dtype != np.uint8:
+                if np.issubdtype(array.dtype, np.floating):
+                    scaled = array if array.max() > 1.0 else array * 255.0
+                    array = np.clip(scaled, 0, 255).astype(np.uint8)
+                else:
+                    array = np.clip(array, 0, 255).astype(np.uint8)
+            result[f"video.{name}"] = array
+
+        return result
+
+    return adapter
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -81,6 +137,7 @@ def main(argv: list[str] | None = None) -> None:
     ai_provider = AICommandProvider(
         client=ai_client,
         instruction_key=ai_cfg.instruction_key,
+        observation_adapter=_make_ai_observation_adapter(),
     )
     providers["infer"] = ai_provider
     ai_key: str | None = "infer"
