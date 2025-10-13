@@ -4,12 +4,12 @@ from typing import Any
 
 import zmq
 
-from gr00t.eval.service import BaseInferenceClient
+from brainbot_core.transport import BaseZMQClient
 
 from brainbot_core.proto import ActionMessage, MessageSerializer, ObservationMessage
 
 
-class CommandChannelClient(BaseInferenceClient):
+class CommandChannelClient(BaseZMQClient):
     def __init__(
         self,
         host: str,

@@ -5,9 +5,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
-from gr00t.eval.service import BaseInferenceClient, ExternalRobotInferenceClient
+from brainbot_core.transport import ActionInferenceClient, BaseZMQClient
 import zmq
-from typing import Any
 
 try:
     from lerobot.processor import RobotProcessorPipeline, make_default_processors
@@ -43,7 +42,7 @@ class IdleCommandProvider(CommandProvider):
 class AICommandProvider(CommandProvider):
     def __init__(
         self,
-        client: ExternalRobotInferenceClient,
+        client: ActionInferenceClient,
         instruction_key: str = "language_instruction",
         observation_adapter: Callable[[ObservationMessage], dict[str, Any]] | None = None,
         action_adapter: Callable[[dict[str, Any]], dict[str, float]] | None = None,
@@ -100,7 +99,7 @@ class LocalTeleopCommandProvider(CommandProvider):
         return ActionMessage(actions=dict(robot_action))
     
 
-class RemoteTeleopClient(BaseInferenceClient):
+class RemoteTeleopClient(BaseZMQClient):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._apply_timeouts()

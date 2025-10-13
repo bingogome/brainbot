@@ -11,8 +11,8 @@ except ImportError:  # compatibility with newer LeRobot releases
     from lerobot.processor.factory import make_default_processors  # type: ignore
 from lerobot.teleoperators.utils import make_teleoperator_from_config
 
-from gr00t.eval.service import ExternalRobotInferenceClient
 from brainbot_core.config import AIClientConfig, ServerRuntimeConfig, WebVizConfig, load_server_config
+from brainbot_core.transport import ActionInferenceClient
 from brainbot_mode_dispatcher import CLIModeDispatcher
 
 from brainbot_webviz import VisualizationServer
@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> None:
         teleop_aliases[name] = key
         teleop_aliases[key] = key
     ai_cfg = config.ai or AIClientConfig()
-    ai_client = ExternalRobotInferenceClient(
+    ai_client = ActionInferenceClient(
         host=ai_cfg.host,
         port=ai_cfg.port,
         timeout_ms=ai_cfg.timeout_ms,
