@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Mapping
 
 from brainbot_core.proto import ActionMessage
 
-from .command_client import CommandChannelClient
+from .command_client import CommandChannelClient, ShutdownRequested
 from .service import RobotControlService
 from .camera_streamer import CameraStreamer
 
@@ -30,6 +31,7 @@ class CommandLoop:
         self._running.set()
         self._fallback = ActionMessage(actions=dict(fallback_action or {}))
         self.camera_streamer = camera_streamer
+        self._logger = logging.getLogger(__name__)
 
     def run(self) -> None:
         while self._running.is_set():
@@ -43,14 +45,22 @@ class CommandLoop:
             try:
                 action = self.client.compute_action(observation)
                 self._missed_actions = 0
+                self._logger.info("[command-loop] applying action keys: %s", list(action.actions.keys()))
+            except ShutdownRequested:
+                print("[command-loop] shutdown requested by command service")
+                self.stop()
+                break
             except TimeoutError:
                 self._missed_actions += 1
                 if self._missed_actions > self.max_missed_actions:
+                    self._logger.warning("[command-loop] max missed actions reached; zeroing command")
                     action = self.service.zero_command()
                     self._missed_actions = 0
                 elif self._fallback.actions:
+                    self._logger.warning("[command-loop] using explicit fallback action")
                     action = ActionMessage(actions=dict(self._fallback.actions))
                 else:
+                    self._logger.warning("[command-loop] reusing last action as fallback")
                     action = self.service.fallback_command()
             self.service.apply_action(action)
             remaining = self.period - (time.perf_counter() - loop_start)

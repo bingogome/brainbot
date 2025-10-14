@@ -23,7 +23,7 @@ class NetworkConfig:
 class EdgeControlConfig:
     robot: RobotConfig
     network: NetworkConfig = field(default_factory=NetworkConfig)
-    loop_hz: float = 30.0
+    loop_hz: float = 15.0
     max_missed_actions: int = 3
     fallback_action: dict[str, float] | None = None
     calibrate_on_start: bool = True
@@ -36,9 +36,13 @@ class EdgeControlConfig:
 class AIClientConfig:
     host: str = "127.0.0.1"
     port: int = 5555
-    timeout_ms: int = 1500
+    timeout_ms: int = 5000
     api_token: str | None = None
     instruction_key: str = "language_instruction"
+    modality_config_path: str | None = None
+    camera_keys: list[str] | None = None
+    state_keys: list[str] | None = None
+    action_horizon: int = 10
 
 
 @dataclass(slots=True)

@@ -132,6 +132,10 @@ class BaseZMQServer:
                     else handler.handler()
                 )
                 self.socket.send(MsgSerializer.to_bytes(result))
+                try:
+                    self._post_send(endpoint, result)
+                except AttributeError:
+                    pass
             except zmq.error.ContextTerminated:
                 break
             except Exception as exc:
@@ -145,6 +149,9 @@ class BaseZMQServer:
                     self.socket.send(MsgSerializer.to_bytes({"error": str(exc)}))
                 except zmq.error.ZMQError:
                     break
+
+    def _post_send(self, endpoint: str, response: Any) -> None:
+        return None
 
     def close(self) -> None:
         self.running = False
@@ -204,8 +211,20 @@ class BaseZMQClient:
         if self.api_token:
             request["api_token"] = self.api_token
 
-        self.socket.send(MsgSerializer.to_bytes(request))
-        message = self.socket.recv()
+        try:
+            self.socket.send(MsgSerializer.to_bytes(request))
+        except zmq.error.ZMQError:
+            self._init_socket()
+            raise
+
+        try:
+            message = self.socket.recv()
+        except zmq.error.Again as exc:
+            self._init_socket()
+            raise TimeoutError("ZMQ request timed out") from exc
+        except zmq.error.ZMQError:
+            self._init_socket()
+            raise
 
         response = MsgSerializer.from_bytes(message)
 

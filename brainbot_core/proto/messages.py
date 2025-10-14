@@ -144,3 +144,10 @@ class MessageSerializer:
         if not isinstance(message, ObservationMessage):
             raise TypeError(f"Expected ObservationMessage, got {type(message).__name__}")
         return message
+
+    @staticmethod
+    def ensure_status(data: Mapping[str, Any]) -> StatusMessage:
+        message = MessageSerializer.from_dict(data)
+        if not isinstance(message, StatusMessage):
+            raise TypeError(f"Expected StatusMessage, got {type(message).__name__}")
+        return message

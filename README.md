@@ -77,6 +77,7 @@ python brainbot/scripts/pc/run_teleop_server.py \
   - `{"teleop": "leader"}`
   - `{"infer": "Pick up the block using the left arm and transfer!"}`
   - `{"idle": ""}`
+  - `{"shutdown": ""}` (gracefully shuts down robot controller, then the hub)
 - View live command traces, numeric history, and camera previews at `http://<edge-ip>:8080/`.
 - `run_thor_preview.py` keeps WebViz and camera streams active before the robot agent starts.
 
@@ -92,6 +93,22 @@ teleops:
 ai:
   host: 127.0.0.1
   port: 5555
+  timeout_ms: 10000
+  modality_config_path: /path/to/bi_so101_modality.json
+  camera_keys: [left, right, top]
+  state_keys:
+    - left_shoulder_pan.pos
+    - left_shoulder_lift.pos
+    - left_elbow_flex.pos
+    - left_wrist_flex.pos
+    - left_wrist_roll.pos
+    - left_gripper.pos
+    - right_shoulder_pan.pos
+    - right_shoulder_lift.pos
+    - right_elbow_flex.pos
+    - right_wrist_flex.pos
+    - right_wrist_roll.pos
+    - right_gripper.pos
 network:
   host: 127.0.0.1
   port: 6000
@@ -102,6 +119,8 @@ camera_stream:
   host: 127.0.0.1
   port: 7005
 ```
+
+Set `modality_config_path`, `camera_keys`, and `state_keys` to values that match your GR00T model's `experiment_cfg/modality.json`.
 
 `brainbot/scripts/pc/leader_teleop.yaml`:
 ```yaml

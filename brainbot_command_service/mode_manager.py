@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from brainbot_mode_dispatcher import IdleModeEvent, InferenceModeEvent, ModeEvent, ModeEventDispatcher, TeleopModeEvent
+from brainbot_mode_dispatcher import IdleModeEvent, InferenceModeEvent, ModeEvent, ModeEventDispatcher, ShutdownModeEvent, TeleopModeEvent
 
 from .providers import AICommandProvider, CommandProvider
 from .service import CommandService
@@ -24,6 +24,7 @@ class ModeManager:
         self._ai_key = ai_key
         self._instruction_attr = instruction_attr
         self._idle_key = idle_key
+        self._shutting_down = False
 
     def start(self) -> None:
         self._dispatcher.start(self._handle_event)
@@ -39,6 +40,8 @@ class ModeManager:
         self._dispatcher.stop()
 
     def _handle_event(self, event: ModeEvent) -> None:
+        if self._shutting_down:
+            return
         if isinstance(event, TeleopModeEvent):
             key = self._provider_aliases.get(event.alias, event.alias)
             try:
@@ -67,3 +70,18 @@ class ModeManager:
                         handler.clear_instruction()
             except ValueError as exc:
                 print(f"[mode-manager] {exc}")
+            return
+
+        if isinstance(event, ShutdownModeEvent):
+            print("[mode-manager] shutdown requested")
+            self._shutting_down = True
+            if self._idle_key:
+                try:
+                    self._service.set_mode(self._idle_key)
+                except ValueError as exc:
+                    print(f"[mode-manager] {exc}")
+            shutdown_event = self._service.initiate_shutdown()
+            if shutdown_event.wait(timeout=2.0):
+                print("[mode-manager] robot acknowledged shutdown")
+            else:
+                print("[mode-manager] no shutdown acknowledgement from robot (timeout)")
