@@ -168,6 +168,113 @@ def _build_ai_observation_adapter(ai_cfg: AIClientConfig):
     return _make_basic_ai_observation_adapter()
 
 
+def _build_gr00t_action_adapter(ai_cfg: AIClientConfig):
+    state_keys = list(ai_cfg.state_keys or [])
+    if not state_keys:
+        return None
+
+    left_arm_keys = [key for key in state_keys if key.startswith("left_") and "gripper" not in key]
+    right_arm_keys = [key for key in state_keys if key.startswith("right_") and "gripper" not in key]
+    left_gripper_key = next((key for key in state_keys if key.startswith("left_gripper")), None)
+    right_gripper_key = next((key for key in state_keys if key.startswith("right_gripper")), None)
+
+    handled_keys = {"action.left_arm", "action.left_gripper", "action.right_arm", "action.right_gripper"}
+    warned_multi: set[str] = set()
+
+    def _assign_targets(values: dict[str, Any], action_key: str, targets: list[str], idx: int, output: dict[str, float]) -> None:
+        if not targets:
+            return
+        array = values.get(action_key)
+        if array is None:
+            return
+        data = np.asarray(array)
+        if data.size == 0:
+            return
+        if data.ndim == 1:
+            if idx > 0:
+                return
+            row = data
+        else:
+            if idx >= data.shape[0]:
+                return
+            row = data[idx]
+        row = np.asarray(row).reshape(-1)
+        if len(row) < len(targets):
+            logger.warning(
+                "GR00T action '%s' size %s does not match expected keys %s",
+                action_key,
+                row.shape,
+                targets,
+            )
+        for name, value in zip(targets, row):
+            output[name] = float(value)
+
+    def _extract_scalar(value: Any, key: str, idx: int) -> float | None:
+        data = np.asarray(value)
+        if data.size == 0:
+            return None
+        if data.ndim == 0:
+            return float(data)
+        if data.ndim == 1:
+            if data.shape[0] == 1:
+                return float(data[0])
+            if idx >= data.shape[0]:
+                return None
+            return float(data[idx])
+        if idx >= data.shape[0]:
+            return None
+        row = np.asarray(data[idx]).reshape(-1)
+        if row.size == 0:
+            return None
+        if row.size > 1 and key not in warned_multi:
+            logger.warning("Action '%s' has %s values; keeping first entry", key, row.size)
+            warned_multi.add(key)
+        return float(row[0])
+
+    def _infer_chunk_length(values: dict[str, Any]) -> int:
+        candidate_keys = ["action.left_arm", "action.right_arm", "action.left_gripper", "action.right_gripper"]
+        for key in candidate_keys:
+            array = values.get(key)
+            if array is None:
+                continue
+            data = np.asarray(array)
+            if data.ndim >= 2 and data.shape[0] > 1:
+                return data.shape[0]
+        for value in values.values():
+            data = np.asarray(value)
+            if data.ndim >= 2 and data.shape[0] > 1:
+                return data.shape[0]
+        return 1
+
+    def adapter(values: dict[str, Any], horizon: int) -> list[dict[str, float]]:
+        chunk_len = _infer_chunk_length(values)
+        limit = min(max(1, horizon), max(1, chunk_len))
+        steps: list[dict[str, float]] = []
+        for idx in range(limit):
+            step: dict[str, float] = {}
+            _assign_targets(values, "action.left_arm", left_arm_keys, idx, step)
+            if left_gripper_key:
+                _assign_targets(values, "action.left_gripper", [left_gripper_key], idx, step)
+            _assign_targets(values, "action.right_arm", right_arm_keys, idx, step)
+            if right_gripper_key:
+                _assign_targets(values, "action.right_gripper", [right_gripper_key], idx, step)
+
+            for key, value in values.items():
+                if not key.startswith("action."):
+                    continue
+                if key in handled_keys:
+                    continue
+                scalar = _extract_scalar(value, key, idx)
+                if scalar is None:
+                    continue
+                step[key] = scalar
+
+            steps.append(step)
+        return steps
+
+    return adapter
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=Path)
@@ -229,6 +336,8 @@ def main(argv: list[str] | None = None) -> None:
         client=ai_client,
         instruction_key=ai_cfg.instruction_key,
         observation_adapter=_build_ai_observation_adapter(ai_cfg),
+        action_adapter=_build_gr00t_action_adapter(ai_cfg),
+        action_horizon=ai_cfg.action_horizon,
     )
     providers["infer"] = ai_provider
     ai_key: str | None = "infer"

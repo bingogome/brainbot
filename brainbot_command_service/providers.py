@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import logging
+from collections import deque
 from collections.abc import Callable
 from typing import Any
 
@@ -49,51 +50,85 @@ class AICommandProvider(CommandProvider):
         client: ActionInferenceClient,
         instruction_key: str = "language_instruction",
         observation_adapter: Callable[[ObservationMessage], dict[str, Any]] | None = None,
-        action_adapter: Callable[[dict[str, Any]], dict[str, float]] | None = None,
+        action_adapter: Callable[[dict[str, Any], int], list[dict[str, float]]] | None = None,
+        action_horizon: int = 1,
     ):
         self.client = client
         self.instruction_key = instruction_key
         self._instruction: str | None = None
         self._observation_adapter = observation_adapter or (lambda obs: dict(obs.payload))
-        self._action_adapter = action_adapter or _numeric_only
+        self._action_adapter = action_adapter or _default_action_sequence
+        self._action_horizon = max(1, int(action_horizon))
+        self._pending_actions: deque[ActionMessage] = deque()
 
     def set_instruction(self, instruction: str) -> None:
         self._instruction = instruction
+        self._pending_actions.clear()
         print(f"[ai] instruction set to: {instruction}")
 
     def clear_instruction(self) -> None:
         self._instruction = None
+        self._pending_actions.clear()
         print("[ai] instruction cleared")
+
+    def prepare(self) -> None:
+        self._pending_actions.clear()
+
+    def shutdown(self) -> None:
+        self._pending_actions.clear()
 
     def compute_command(self, observation: ObservationMessage) -> ActionMessage:
         if not self._instruction:
+            self._pending_actions.clear()
             return ActionMessage(actions={})
-        obs_payload = self._observation_adapter(observation)
-        obs_payload[self.instruction_key] = self._instruction
-        desc = obs_payload.get("annotation.human.task_description", self._instruction)
-        if isinstance(desc, (list, tuple)):
-            obs_payload["annotation.human.task_description"] = list(desc)
-        else:
-            obs_payload["annotation.human.task_description"] = [desc]
-        for key, value in list(obs_payload.items()):
-            if isinstance(value, np.ndarray):
-                continue
-            if key.startswith("state.") and isinstance(value, list):
-                continue
-            if isinstance(value, (list, tuple)):
-                continue
-            obs_payload[key] = [value]
-        logger.debug("[ai] payload keys: %s", list(obs_payload.keys()))
-        try:
-            action_dict = self.client.get_action(obs_payload)
-        except TimeoutError:
-            logger.warning("[ai] GR00T inference timed out")
-            raise
-        except Exception as exc:
-            logger.error("[ai] inference error: %s", exc)
-            raise
-        logger.info("[ai] received action keys: %s", list(action_dict.keys()))
-        return ActionMessage(actions=self._action_adapter(action_dict))
+
+        if not self._pending_actions:
+            obs_payload = self._observation_adapter(observation)
+            obs_payload[self.instruction_key] = self._instruction
+            desc = obs_payload.get("annotation.human.task_description", self._instruction)
+            if isinstance(desc, (list, tuple)):
+                obs_payload["annotation.human.task_description"] = list(desc)
+            else:
+                obs_payload["annotation.human.task_description"] = [desc]
+            for key, value in list(obs_payload.items()):
+                if isinstance(value, np.ndarray):
+                    continue
+                if key.startswith("state.") and isinstance(value, list):
+                    continue
+                if isinstance(value, (list, tuple)):
+                    continue
+                obs_payload[key] = [value]
+            logger.debug("[ai] payload keys: %s", list(obs_payload.keys()))
+            try:
+                action_chunk = self.client.get_action(obs_payload)
+            except TimeoutError:
+                logger.warning("[ai] GR00T inference timed out")
+                raise
+            except Exception as exc:
+                logger.error("[ai] inference error: %s", exc)
+                raise
+            logger.info("[ai] received action keys: %s", list(action_chunk.keys()))
+            try:
+                batches = self._action_adapter(action_chunk, self._action_horizon)
+            except Exception as exc:
+                logger.error("[ai] failed to adapt action chunk: %s", exc)
+                raise
+            if not batches:
+                logger.warning("[ai] action adapter returned no actions; inserting noop")
+                batches = [{}]
+            for batch in batches:
+                self._pending_actions.append(ActionMessage(actions=dict(batch)))
+
+        if not self._pending_actions:
+            return ActionMessage(actions={})
+        return self._pending_actions.popleft()
+
+
+
+def _default_action_sequence(values: dict[str, Any], _: int) -> list[dict[str, float]]:
+    numeric = _numeric_only(values)
+    return [numeric] if numeric else [{}]
+
 
 
 class LocalTeleopCommandProvider(CommandProvider):
