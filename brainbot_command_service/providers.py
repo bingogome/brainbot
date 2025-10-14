@@ -84,7 +84,14 @@ class AICommandProvider(CommandProvider):
                 continue
             obs_payload[key] = [value]
         logger.debug("[ai] payload keys: %s", list(obs_payload.keys()))
-        action_dict = self.client.get_action(obs_payload)
+        try:
+            action_dict = self.client.get_action(obs_payload)
+        except TimeoutError:
+            logger.warning("[ai] GR00T inference timed out")
+            raise
+        except Exception as exc:
+            logger.error("[ai] inference error: %s", exc)
+            raise
         logger.info("[ai] received action keys: %s", list(action_dict.keys()))
         return ActionMessage(actions=self._action_adapter(action_dict))
 

@@ -211,8 +211,20 @@ class BaseZMQClient:
         if self.api_token:
             request["api_token"] = self.api_token
 
-        self.socket.send(MsgSerializer.to_bytes(request))
-        message = self.socket.recv()
+        try:
+            self.socket.send(MsgSerializer.to_bytes(request))
+        except zmq.error.ZMQError:
+            self._init_socket()
+            raise
+
+        try:
+            message = self.socket.recv()
+        except zmq.error.Again as exc:
+            self._init_socket()
+            raise TimeoutError("ZMQ request timed out") from exc
+        except zmq.error.ZMQError:
+            self._init_socket()
+            raise
 
         response = MsgSerializer.from_bytes(message)
 
