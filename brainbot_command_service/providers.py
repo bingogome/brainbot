@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -18,6 +19,8 @@ except ImportError:  # compatibility with newer LeRobot releases
 from lerobot.teleoperators.teleoperator import Teleoperator
 
 from brainbot_core.proto import ActionMessage, MessageSerializer, ObservationMessage
+
+logger = logging.getLogger(__name__)
 
 
 class CommandProvider(ABC):
@@ -80,7 +83,9 @@ class AICommandProvider(CommandProvider):
             if isinstance(value, (list, tuple)):
                 continue
             obs_payload[key] = [value]
+        logger.debug("[ai] payload keys: %s", list(obs_payload.keys()))
         action_dict = self.client.get_action(obs_payload)
+        logger.info("[ai] received action keys: %s", list(action_dict.keys()))
         return ActionMessage(actions=self._action_adapter(action_dict))
 
 
