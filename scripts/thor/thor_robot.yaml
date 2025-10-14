@@ -29,7 +29,7 @@ robot:
 network:
   host: 127.0.0.1
   port: 6000
-loop_hz: 15
+loop_hz: 40
 max_missed_actions: 2
 fallback_action: {}
 calibrate_on_start: true
