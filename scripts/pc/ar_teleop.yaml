@@ -6,4 +6,4 @@ teleop:
     id: quest3
 network:
   host: 0.0.0.0
-  port: 7002
+  port: 7004
