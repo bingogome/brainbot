@@ -171,7 +171,17 @@ def _build_ai_observation_adapter(ai_cfg: AIClientConfig):
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        help="Logging level (e.g. DEBUG, INFO, WARNING)",
+    )
     args = parser.parse_args(argv)
+
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
 
     config: ServerRuntimeConfig = load_server_config(args.config)
     providers: dict[str, CommandProvider] = {}
