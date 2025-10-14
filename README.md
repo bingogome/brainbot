@@ -93,6 +93,7 @@ teleops:
 ai:
   host: 127.0.0.1
   port: 5555
+  timeout_ms: 10000
   modality_config_path: /path/to/bi_so101_modality.json
   camera_keys: [left, right, top]
   state_keys:

@@ -36,7 +36,7 @@ class EdgeControlConfig:
 class AIClientConfig:
     host: str = "127.0.0.1"
     port: int = 5555
-    timeout_ms: int = 1500
+    timeout_ms: int = 5000
     api_token: str | None = None
     instruction_key: str = "language_instruction"
     modality_config_path: str | None = None

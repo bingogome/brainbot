@@ -20,7 +20,7 @@ teleops:
 ai:
   host: 172.17.0.3        # GR00T running in container on Thor
   port: 5555
-  timeout_ms: 2000
+  timeout_ms: 10000
   instruction_key: language_instruction
   modality_config_path: /workspace/Isaac-GR00T/examples/SO-100/bi_so101_modality.json
   camera_keys: [left, right, top]
