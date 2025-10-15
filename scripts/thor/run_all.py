@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--robot-config", type=Path, default=ROBOT_CONFIG, help="Path to robot service config")
     parser.add_argument("--log-level", default=None, help="Logging level for the command service")
     parser.add_argument("--no-calibrate", action="store_true", help="Skip robot calibration on startup")
-    parser.add_argument("--delay", type=float, default=3.0, help="Delay (seconds) between starting command service and robot")
+    parser.add_argument("--delay", type=float, default=10.0, help="Delay (seconds) between starting command service and robot")
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument("--command-only", action="store_true", help="Only run the command service")
     mode_group.add_argument("--robot-only", action="store_true", help="Only run the robot service")

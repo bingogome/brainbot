@@ -2,20 +2,30 @@
 teleops:
   leader:
     mode: remote
-    host: 192.168.22.171   # operator PC hosting leader teleop server
+    host: 192.168.22.171  
     port: 7001
     timeout_ms: 1000
-  # local_stub:
+  joycon:
+    mode: remote
+    host: 192.168.22.171   
+    port: 7002
+    timeout_ms: 1000
+  gamepad:
+    mode: remote
+    host: 192.168.22.171 
+    port: 7003
+    timeout_ms: 1000
+  ar:
+    mode: remote
+    host: 192.168.22.171  
+    port: 7004
+    timeout_ms: 1000
+  # localteleop: # This will just be a lerobot teleoperator without needing ip
   #   mode: local
   #   config:
   #     type: some_local_teleop
   #     id: local
   #     # ... additional teleop fields ...
-  # ar:
-  #   mode: remote
-  #   host: 192.168.1.31   # AR teleop server (update with actual address)
-  #   port: 7002
-  #   timeout_ms: 1000
 
 ai:
   host: 172.17.0.3        # GR00T running in container on Thor
