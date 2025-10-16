@@ -8,7 +8,7 @@ from lerobot.robots.utils import make_robot_from_config
 
 from brainbot_core.config import EdgeControlConfig, load_edge_config
 
-from . import CameraStreamer, CommandChannelClient, CommandLoop, NoOpMobileBase, RobotControlService
+from . import CameraStreamer, CommandChannelClient, CommandLoop, RobotControlService
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         raise ValueError(f"Unknown observation_adapter '{config.observation_adapter}'")
 
-    service = RobotControlService(robot=robot, base=NoOpMobileBase(), observation_adapter=observation_adapter)
+    service = RobotControlService(robot=robot, observation_adapter=observation_adapter)
     client = CommandChannelClient(
         host=config.network.host,
         port=config.network.port,

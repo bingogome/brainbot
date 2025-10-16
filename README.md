@@ -73,9 +73,13 @@ python brainbot/scripts/pc/run_teleop_server.py \
 (AR controllers are configured similarly using `mode: local`.)
 
 ### Mode Control & Visualization
-- Send JSON commands on the edge machine to swap providers:
+- Send JSON commands in runtime on the edge machine to swap providers:
   - `{"teleop": "leader"}`
+  - `{"teleop": "ar"}`
+  - `{"teleop": "joycon"}`
+  - `{"teleop": "gamepad"}`
   - `{"infer": "Pick up the block using the left arm and transfer!"}`
+  - `{"infer": "Open the shelf"}`
   - `{"idle": ""}`
   - `{"shutdown": ""}` (gracefully shuts down robot controller, then the hub)
 - View live command traces, numeric history, and camera previews at `http://<edge-ip>:8080/`.
