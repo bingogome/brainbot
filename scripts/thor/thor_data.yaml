@@ -1,0 +1,19 @@
+# Data collection configuration for XLerobot on Jetson Thor
+robot_config_path: thor_robot.yaml
+teleop:
+  mode: remote
+  host: 192.168.22.171
+  port: 7010
+  timeout_ms: 1500
+dataset:
+  repo_id: ${HF_USER:-your_user}/xlerobot-data
+  root: /home/thor/.cache/huggingface/lerobot/yihao-brain-bot/xlerobot-data
+  episode_time_s: 300
+  reset_time_s: 300
+  num_episodes: 20
+  single_task: "Use the right arm to pick up the Musketeer candy bar and place it in the paper box."
+  video: true
+  push_to_hub: false
+  video_encoding_batch_size: 1
+display_data: false
+resume: false

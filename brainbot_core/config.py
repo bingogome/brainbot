@@ -78,6 +78,35 @@ class TeleopEndpointConfig:
 
 
 @dataclass(slots=True)
+class DatasetRecordConfig:
+    repo_id: str
+    single_task: str
+    root: str | Path | None = None
+    fps: int = 30
+    episode_time_s: float = 60.0
+    reset_time_s: float = 60.0
+    num_episodes: int = 50
+    video: bool = True
+    push_to_hub: bool = True
+    private: bool = False
+    tags: list[str] | None = None
+    num_image_writer_processes: int = 0
+    num_image_writer_threads_per_camera: int = 4
+    video_encoding_batch_size: int = 1
+    rename_map: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class DataModeConfig:
+    robot: RobotConfig
+    dataset: DatasetRecordConfig
+    teleop: "TeleopEndpointConfig | None" = None
+    display_data: bool = False
+    resume: bool = False
+    play_sounds: bool = False
+
+
+@dataclass(slots=True)
 class CameraStreamSourceConfig:
     name: str
     path: str
@@ -108,11 +137,25 @@ class ServerRuntimeConfig:
     webviz: WebVizConfig | None = None
     camera_stream: CameraStreamConfig | None = None
     metadata: Mapping[str, Any] | None = None
+    data: DataModeConfig | None = None
 
 
 def load_edge_config(path: Path) -> EdgeControlConfig:
     raw = _load_yaml(path)
-    robot_cfg = _load_draccus_config(raw.pop("robot"), RobotConfig)
+    base_dir = path.parent
+    robot_raw = raw.pop("robot", None)
+    robot_path = raw.pop("robot_config_path", None)
+    if robot_path:
+        robot_external = _load_robot_config_from_path(robot_path, base_dir)
+        if robot_raw:
+            merged = dict(robot_external)
+            merged.update(robot_raw)
+            robot_raw = merged
+        else:
+            robot_raw = robot_external
+    if robot_raw is None:
+        raise ValueError("Edge config requires 'robot' or 'robot_config_path'")
+    robot_cfg = _load_draccus_config(robot_raw, RobotConfig)
     network_cfg = NetworkConfig(**raw.pop("network", {}))
     observation_adapter = str(raw.pop("observation_adapter", "numeric_only")).lower()
     camera_stream_raw = raw.pop("camera_stream", None)
@@ -140,6 +183,7 @@ def load_edge_config(path: Path) -> EdgeControlConfig:
 
 def load_server_config(path: Path) -> ServerRuntimeConfig:
     raw = _load_yaml(path)
+    base_dir = path.parent
 
     teleops_data = raw.pop("teleops", None)
     teleop_single = raw.pop("teleop", None)
@@ -163,6 +207,8 @@ def load_server_config(path: Path) -> ServerRuntimeConfig:
     webviz_cfg = WebVizConfig(**webviz_data) if webviz_data else None
     camera_stream_data = raw.pop("camera_stream", None)
     camera_stream_cfg = _load_camera_stream_config(camera_stream_data) if camera_stream_data else None
+    data_raw = raw.pop("data", None)
+    data_cfg = _load_data_mode_config(data_raw, base_dir=base_dir) if data_raw else None
 
     return ServerRuntimeConfig(
         teleops=teleop_cfgs,
@@ -172,6 +218,7 @@ def load_server_config(path: Path) -> ServerRuntimeConfig:
         webviz=webviz_cfg,
         camera_stream=camera_stream_cfg,
         metadata=raw.pop("metadata", None),
+        data=data_cfg,
     )
 
 
@@ -250,6 +297,79 @@ def _load_draccus_config(data: Mapping[str, Any], target_cls: type) -> Any:
     buffer.seek(0)
     with draccus.config_type("yaml"):
         return draccus.load(target_cls, buffer)
+
+
+def _load_data_mode_config(data: Mapping[str, Any] | str | Path, base_dir: Path | None = None) -> DataModeConfig:
+    if isinstance(data, (str, Path)):
+        external_path = _resolve_config_path(data, base_dir)
+        external_data = _load_yaml(external_path)
+        return _load_data_mode_config(external_data.get("data", external_data), base_dir=external_path.parent)
+    if not isinstance(data, Mapping):
+        raise ValueError("Data mode configuration must be a mapping")
+
+    local = dict(data)
+    config_path = local.pop("config_path", None)
+    if config_path:
+        external_path = _resolve_config_path(config_path, base_dir)
+        external_data = _load_yaml(external_path)
+        merged = dict(external_data.get("data", external_data))
+        merged.update(local)
+        local = merged
+        base_dir = external_path.parent
+
+    robot_raw = local.pop("robot", None)
+    robot_path = local.pop("robot_config_path", None)
+    if robot_path:
+        robot_external = _load_robot_config_from_path(robot_path, base_dir)
+        if robot_raw:
+            merged_robot = dict(robot_external)
+            merged_robot.update(robot_raw)
+            robot_raw = merged_robot
+        else:
+            robot_raw = robot_external
+    if robot_raw is None:
+        raise ValueError("Data mode requires a 'robot' configuration block (directly or via 'robot_config_path')")
+
+    dataset_raw = local.pop("dataset", None)
+    if dataset_raw is None:
+        raise ValueError("Data mode requires a 'dataset' configuration block")
+
+    teleop_raw = local.pop("teleop", None)
+    teleop_cfg: TeleopEndpointConfig | None = None
+    if teleop_raw:
+        if isinstance(teleop_raw, Mapping) and teleop_raw.get("mode"):
+            teleop_cfg = _make_teleop_endpoint("data", teleop_raw)
+        else:
+            local_cfg = _load_draccus_config(teleop_raw, TeleoperatorConfig)
+            teleop_cfg = TeleopEndpointConfig(mode="local", local=local_cfg)
+
+    robot_cfg = _load_draccus_config(robot_raw, RobotConfig)
+    dataset_cfg = DatasetRecordConfig(**dataset_raw)
+
+    return DataModeConfig(
+        robot=robot_cfg,
+        dataset=dataset_cfg,
+        teleop=teleop_cfg,
+        display_data=bool(local.get("display_data", False)),
+        resume=bool(local.get("resume", False)),
+        play_sounds=bool(local.get("play_sounds", False)),
+    )
+
+
+def _resolve_config_path(value: str | Path, base_dir: Path | None) -> Path:
+    path_obj = Path(value)
+    if base_dir and not path_obj.is_absolute():
+        path_obj = base_dir / path_obj
+    return path_obj
+
+
+def _load_robot_config_from_path(value: str | Path, base_dir: Path | None) -> Mapping[str, Any]:
+    path_obj = _resolve_config_path(value, base_dir)
+    data = _load_yaml(path_obj)
+    robot_data = data.get("robot", data)
+    if not isinstance(robot_data, Mapping):
+        raise ValueError(f"Robot config at '{path_obj}' must contain a mapping under 'robot'")
+    return dict(robot_data)
 
 
 def _make_teleop_endpoint(name: str, cfg: Mapping[str, Any]) -> TeleopEndpointConfig:

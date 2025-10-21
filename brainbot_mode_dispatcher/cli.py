@@ -77,6 +77,11 @@ class CLIModeDispatcher(ModeEventDispatcher):
         queue_obj = self._queue
         if queue_obj is None:
             return
+        if "data" in data:
+            alias_raw = data["data"]
+            alias = "data" if not alias_raw else str(alias_raw)
+            queue_obj.put(TeleopModeEvent(alias=alias))
+            return
         if "teleop" in data:
             queue_obj.put(TeleopModeEvent(alias=str(data["teleop"])))
             return
