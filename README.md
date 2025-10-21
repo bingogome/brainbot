@@ -94,11 +94,22 @@ teleops:
     mode: remote
     host: 192.168.22.171
     port: 7001
+    timeout_ms: 1000
+  joycon:
+    mode: remote
+    host: 192.168.22.171
+    port: 7002
+    timeout_ms: 1000
+  gamepad:
+    mode: remote
+    host: 192.168.22.171
+    port: 7003
+    timeout_ms: 1000
 ai:
-  host: 127.0.0.1
+  host: 172.17.0.3
   port: 5555
   timeout_ms: 10000
-  modality_config_path: /path/to/bi_so101_modality.json
+  modality_config_path: scripts/thor/xlerobot_modality.json
   camera_keys: [left, right, top]
   state_keys:
     - left_shoulder_pan.pos
@@ -113,6 +124,11 @@ ai:
     - right_wrist_flex.pos
     - right_wrist_roll.pos
     - right_gripper.pos
+    - x.vel
+    - y.vel
+    - theta.vel
+    - mount_pan.pos
+    - mount_tilt.pos
 network:
   host: 127.0.0.1
   port: 6000
@@ -122,18 +138,37 @@ webviz:
 camera_stream:
   host: 127.0.0.1
   port: 7005
+  quality: 70
+  sources:
+    - name: left
+      path: robot.cameras.left
+      fps: 15
+    - name: right
+      path: robot.cameras.right
+      fps: 15
+    - name: top
+      path: robot.cameras.top
+      fps: 15
 ```
 
-Set `modality_config_path`, `camera_keys`, and `state_keys` to values that match your GR00T model's `experiment_cfg/modality.json`.
+Adjust the modality path, camera keys, and state keys so they match the GR00T build you deploy (add or remove base/mount keys as needed).
 
 `brainbot/scripts/pc/leader_teleop.yaml`:
 ```yaml
 teleop:
   mode: local
   config:
-    type: bi_so101_leader
-    left_arm_port: /dev/ttyACM1
-    right_arm_port: /dev/ttyACM0
+    type: xlerobot_leader_gamepad
+    id: leader
+    arms:
+      left_arm_port: /dev/ttyACM0
+      right_arm_port: /dev/ttyACM1
+    base:
+      joystick_index: 0
+      max_speed_mps: 0.8
+      deadzone: 0.15
+      yaw_speed_deg: 45
+    mount: {}
 network:
   host: 0.0.0.0
   port: 7001
@@ -142,9 +177,16 @@ network:
 `brainbot/scripts/thor/thor_robot.yaml`:
 ```yaml
 robot:
-  type: bi_so101_follower
-  left_arm_port: /dev/ttyACM1
-  right_arm_port: /dev/ttyACM0
+  type: xlerobot
+  id: follower
+  arms:
+    left_arm_port: /dev/ttyACM2
+    right_arm_port: /dev/ttyACM3
+  base:
+    port: /dev/ttyACM4
+    wheel_radius_m: 0.05
+    base_radius_m: 0.125
+  mount: {}
   cameras:
     left:  {type: opencv, index_or_path: 8, width: 640, height: 480, fps: 15, enable_mjpeg: true}
     right: {type: opencv, index_or_path: 6, width: 640, height: 480, fps: 15, enable_mjpeg: true}

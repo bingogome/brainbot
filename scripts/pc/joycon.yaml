@@ -1,8 +1,16 @@
-# Teleop server configuration for leader arms on operator PC
+# Teleop server configuration for XLerobot JoyCon + base teleop
 teleop:
   mode: local
   config:
-    type: bi_joycon
+    type: xlerobot_joycon_gamepad
+    id: joycon
+    arms: {}
+    base:
+      joystick_index: 0
+      max_speed_mps: 0.8
+      deadzone: 0.15
+      yaw_speed_deg: 45
+    mount: {}
 network:
   host: 0.0.0.0
   port: 7002
