@@ -27,7 +27,7 @@ teleops:
   #     id: local
 
 ai:
-  host: 172.17.0.3        # GR00T running in container on Thor
+  host: 172.17.0.2        # GR00T running in container on Thor
   port: 5555
   timeout_ms: 10000
   instruction_key: language_instruction

@@ -20,6 +20,13 @@ class NetworkConfig:
 
 
 @dataclass(slots=True)
+class ObservationPreprocessConfig:
+    target_height: int = 224
+    target_width: int = 224
+    interpolation: str = "linear"
+
+
+@dataclass(slots=True)
 class EdgeControlConfig:
     robot: RobotConfig
     network: NetworkConfig = field(default_factory=NetworkConfig)
@@ -30,6 +37,7 @@ class EdgeControlConfig:
     observation_adapter: str = "numeric_only"
     camera_stream: "CameraStreamConfig | None" = None
     metadata: Mapping[str, Any] | None = None
+    observation_preprocess: ObservationPreprocessConfig | None = None
 
 
 @dataclass(slots=True)
@@ -102,6 +110,8 @@ def load_edge_config(path: Path) -> EdgeControlConfig:
     camera_stream_cfg = _load_camera_stream_config(camera_stream_raw) if camera_stream_raw else None
     if camera_stream_cfg is None:
         camera_stream_cfg = _infer_camera_stream_config(robot_cfg)
+    preprocess_raw = raw.pop("observation_preprocess", None)
+    preprocess_cfg = ObservationPreprocessConfig(**preprocess_raw) if preprocess_raw else None
     return EdgeControlConfig(
         robot=robot_cfg,
         network=network_cfg,
@@ -112,6 +122,7 @@ def load_edge_config(path: Path) -> EdgeControlConfig:
         observation_adapter=observation_adapter,
         camera_stream=camera_stream_cfg,
         metadata=raw.pop("metadata", None),
+        observation_preprocess=preprocess_cfg,
     )
 
 

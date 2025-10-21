@@ -151,6 +151,8 @@ camera_stream:
       fps: 15
 ```
 
+RobotControlService now switches to numeric-only observations when a teleop provider is active and brings back preprocessed camera frames automatically while AI mode is running, keeping both workflows responsive.
+
 Adjust the modality path, camera keys, and state keys so they match the GR00T build you deploy (add or remove base/mount keys as needed).
 
 `brainbot/scripts/pc/leader_teleop.yaml`:
@@ -197,7 +199,11 @@ network:
 loop_hz: 40
 max_missed_actions: 2
 calibrate_on_start: true
-observation_adapter: identity        # keep raw arrays for GR00T + streamer
+observation_adapter: identity        # start in full mode; dynamic switching keeps teleop fast
+observation_preprocess:
+  target_height: 224
+  target_width: 224
+  interpolation: linear
 camera_stream:
   host: 0.0.0.0
   port: 7005

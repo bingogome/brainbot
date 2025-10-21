@@ -36,16 +36,16 @@ class CommandLoop:
     def run(self) -> None:
         while self._running.is_set():
             loop_start = time.perf_counter()
-            observation = self.service.get_observation()
             if self.camera_streamer:
+                observation, raw_robot_obs = self.service.get_observation(return_raw=True)
                 try:
-                    self.camera_streamer.publish(observation.payload)
+                    self.camera_streamer.publish({"robot": raw_robot_obs})
                 except Exception as exc:
                     print(f"[camera-stream] publish failed: {exc}")
+            else:
+                observation = self.service.get_observation()
             try:
                 action = self.client.compute_action(observation)
-                self._missed_actions = 0
-                self._logger.info("[command-loop] applying action keys: %s", list(action.actions.keys()))
             except ShutdownRequested:
                 print("[command-loop] shutdown requested by command service")
                 self.stop()
@@ -62,6 +62,10 @@ class CommandLoop:
                 else:
                     self._logger.warning("[command-loop] reusing last action as fallback")
                     action = self.service.fallback_command()
+            else:
+                self.service.set_observation_mode(self.client.last_observation_hint())
+                self._missed_actions = 0
+                self._logger.info("[command-loop] applying action keys: %s", list(action.actions.keys()))
             self.service.apply_action(action)
             remaining = self.period - (time.perf_counter() - loop_start)
             if remaining > 0:

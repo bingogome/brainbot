@@ -35,6 +35,9 @@ class CommandProvider(ABC):
     def compute_command(self, observation: ObservationMessage) -> ActionMessage:
         ...
 
+    def wants_full_observation(self) -> bool:
+        return False
+
 
 class IdleCommandProvider(CommandProvider):
     def __init__(self, actions: dict[str, float] | None = None):
@@ -70,6 +73,9 @@ class AICommandProvider(CommandProvider):
         self._instruction = None
         self._pending_actions.clear()
         print("[ai] instruction cleared")
+
+    def wants_full_observation(self) -> bool:
+        return True
 
     def prepare(self) -> None:
         self._pending_actions.clear()
@@ -107,7 +113,7 @@ class AICommandProvider(CommandProvider):
             except Exception as exc:
                 logger.error("[ai] inference error: %s", exc)
                 raise
-            logger.info("[ai] received action keys: %s", list(action_chunk.keys()))
+            logger.debug("[ai] received action keys: %s", list(action_chunk.keys()))
             try:
                 batches = self._action_adapter(action_chunk, self._action_horizon)
             except Exception as exc:
