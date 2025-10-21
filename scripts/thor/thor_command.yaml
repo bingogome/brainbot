@@ -74,7 +74,7 @@ camera_stream:
       path: robot.cameras.top
       fps: 15
 data:
-  config_path: scripts/thor/thor_data.yaml
+  config_path: thor_data.yaml
 default_mode: idle
 metadata:
   node: xlerobot
