@@ -1,8 +1,10 @@
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
 import logging
+import time
 from collections import deque
 from collections.abc import Callable
 from typing import Any
@@ -22,6 +24,14 @@ from lerobot.teleoperators.teleoperator import Teleoperator
 from brainbot_core.proto import ActionMessage, MessageSerializer, ObservationMessage
 
 logger = logging.getLogger(__name__)
+
+
+def _numeric_only(values: dict[str, Any]) -> dict[str, float]:
+    numeric: dict[str, float] = {}
+    for key, value in values.items():
+        if isinstance(value, (int, float)):
+            numeric[key] = float(value)
+    return numeric
 
 
 class CommandProvider(ABC):
@@ -45,7 +55,7 @@ class IdleCommandProvider(CommandProvider):
 
     def compute_command(self, observation: ObservationMessage) -> ActionMessage:
         return ActionMessage(actions=dict(self._actions))
-    
+
 
 class AICommandProvider(CommandProvider):
     def __init__(
@@ -89,7 +99,9 @@ class AICommandProvider(CommandProvider):
             return ActionMessage(actions={})
 
         if not self._pending_actions:
+            profile_start = time.perf_counter()
             obs_payload = self._observation_adapter(observation)
+            encode_start = time.perf_counter()
             obs_payload[self.instruction_key] = self._instruction
             desc = obs_payload.get("annotation.human.task_description", self._instruction)
             if isinstance(desc, (list, tuple)):
@@ -104,21 +116,40 @@ class AICommandProvider(CommandProvider):
                 if isinstance(value, (list, tuple)):
                     continue
                 obs_payload[key] = [value]
-            logger.debug("[ai] payload keys: %s", list(obs_payload.keys()))
+            encode_elapsed = time.perf_counter() - encode_start
+            logger.debug("[ai-profile] encode %.3f ms", encode_elapsed * 1000.0)
+
+            infer_start = time.perf_counter()
             try:
                 action_chunk = self.client.get_action(obs_payload)
             except TimeoutError:
-                logger.warning("[ai] GR00T inference timed out")
+                infer_elapsed = time.perf_counter() - infer_start
+                logger.warning("[ai] GR00T inference timed out after %.3f ms", infer_elapsed * 1000.0)
                 raise
             except Exception as exc:
-                logger.error("[ai] inference error: %s", exc)
+                infer_elapsed = time.perf_counter() - infer_start
+                logger.error("[ai] inference error after %.3f ms: %s", infer_elapsed * 1000.0, exc)
                 raise
+            infer_elapsed = time.perf_counter() - infer_start
+            logger.debug("[ai-profile] infer %.3f ms", infer_elapsed * 1000.0)
             logger.debug("[ai] received action keys: %s", list(action_chunk.keys()))
+
+            adapt_start = time.perf_counter()
             try:
                 batches = self._action_adapter(action_chunk, self._action_horizon)
             except Exception as exc:
                 logger.error("[ai] failed to adapt action chunk: %s", exc)
                 raise
+            adapt_elapsed = time.perf_counter() - adapt_start
+            total_elapsed = time.perf_counter() - profile_start
+            logger.debug(
+                "[ai-profile] encode=%.3fms infer=%.3fms adapt=%.3fms total=%.3fms",
+                encode_elapsed * 1000.0,
+                infer_elapsed * 1000.0,
+                adapt_elapsed * 1000.0,
+                total_elapsed * 1000.0,
+            )
+
             if not batches:
                 logger.warning("[ai] action adapter returned no actions; inserting noop")
                 batches = [{}]
@@ -128,7 +159,6 @@ class AICommandProvider(CommandProvider):
         if not self._pending_actions:
             return ActionMessage(actions={})
         return self._pending_actions.popleft()
-
 
 
 def _default_action_sequence(values: dict[str, Any], _: int) -> list[dict[str, float]]:
@@ -164,7 +194,7 @@ class LocalTeleopCommandProvider(CommandProvider):
         if self.robot_action_processor:
             robot_action = self.robot_action_processor((robot_action, payload))
         return ActionMessage(actions=dict(robot_action))
-    
+
 
 class RemoteTeleopClient(BaseZMQClient):
     def __init__(self, *args, **kwargs):
@@ -224,11 +254,3 @@ class RemoteTeleopCommandProvider(CommandProvider):
         if "action" not in response:
             raise RuntimeError(f"Remote teleop response missing action: {response}")
         return MessageSerializer.ensure_action(response["action"])
-
-
-def _numeric_only(values: dict[str, Any]) -> dict[str, float]:
-    numeric: dict[str, float] = {}
-    for key, value in values.items():
-        if isinstance(value, (int, float)):
-            numeric[key] = float(value)
-    return numeric

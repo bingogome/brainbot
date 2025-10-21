@@ -36,7 +36,7 @@ network:
   host: 127.0.0.1
   port: 6000
 loop_hz: 40
-max_missed_actions: 2
+max_missed_actions: 3
 fallback_action: {}
 calibrate_on_start: true
 observation_adapter: identity
@@ -44,6 +44,10 @@ observation_preprocess:
   target_height: 224
   target_width: 224
   interpolation: linear
+action_filter:
+  type: median
+  window_size: 4
+  blend_alpha: 0.3
 camera_stream:
   host: 0.0.0.0
   port: 7005

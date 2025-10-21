@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import time
+from collections import deque
 from collections.abc import Callable, Mapping
 from typing import Any
+import statistics
 
 import numpy as np
 
@@ -13,7 +15,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from lerobot.robots.robot import Robot
 
-from brainbot_core.config import ObservationPreprocessConfig
+from brainbot_core.config import ActionFilterConfig, ObservationPreprocessConfig
 from brainbot_core.proto import ActionMessage, ObservationMessage
 
 ObservationAdapter = Callable[[Mapping[str, Any]], dict[str, Any]]
@@ -28,6 +30,49 @@ def _numeric_only(values: Mapping[str, Any]) -> dict[str, float]:
     return filtered
 
 
+class _MedianActionFilter:
+    def __init__(self, window_size: int):
+        self._window_size = max(1, int(window_size))
+        self._buffers: dict[str, deque[float]] = {}
+
+    def apply(self, actions: Mapping[str, float]) -> dict[str, float]:
+        if self._window_size <= 1:
+            return {key: float(value) for key, value in actions.items()}
+        filtered: dict[str, float] = {}
+        for key, value in actions.items():
+            buf = self._buffers.setdefault(key, deque(maxlen=self._window_size))
+            buf.append(float(value))
+            filtered[key] = float(statistics.median(buf))
+        return filtered
+
+
+class _MedianLowPassFilter:
+    def __init__(self, window_size: int, alpha: float):
+        self._median = _MedianActionFilter(window_size)
+        self._alpha = float(max(0.0, min(1.0, alpha)))
+        self._last_output: dict[str, float] | None = None
+
+    def apply(self, actions: Mapping[str, float]) -> dict[str, float]:
+        median_output = self._median.apply(actions)
+        if self._last_output is None:
+            self._last_output = dict(median_output)
+            return median_output
+
+        blended: dict[str, float] = {}
+        alpha = self._alpha
+        for key, value in median_output.items():
+            prev = self._last_output.get(key, value)
+            blended_value = (1.0 - alpha) * prev + alpha * value
+            blended[key] = blended_value
+            self._last_output[key] = blended_value
+
+        for key in list(self._last_output.keys()):
+            if key not in median_output:
+                self._last_output.pop(key)
+
+        return blended
+
+
 class RobotControlService:
     def __init__(
         self,
@@ -37,6 +82,7 @@ class RobotControlService:
         numeric_observation_adapter: ObservationAdapter | None = None,
         action_adapter: ActionAdapter | None = None,
         preprocess_config: ObservationPreprocessConfig | None = None,
+        action_filter_config: ActionFilterConfig | None = None,
         initial_observation_mode: str = "numeric",
     ):
         self.robot = robot
@@ -44,6 +90,7 @@ class RobotControlService:
         self._numeric_adapter = numeric_observation_adapter or _numeric_only
         self._action_adapter = action_adapter or (lambda actions: dict(actions))
         self._preprocess_config = preprocess_config
+        self._action_filter = self._make_action_filter(action_filter_config)
         allowed = {"numeric", "full", "full_preprocessed"}
         self._current_observation_mode = initial_observation_mode if initial_observation_mode in allowed else "numeric"
         self._last_action = self._zero_action()
@@ -73,6 +120,7 @@ class RobotControlService:
 
     def apply_action(self, action: ActionMessage) -> None:
         mapped_action = self._action_adapter(action.actions)
+        mapped_action = self._apply_action_filter(mapped_action)
         if mapped_action:
             self.robot.send_action(mapped_action)
             self._last_action = ActionMessage(actions=dict(mapped_action), timestamp_ns=action.timestamp_ns)
@@ -89,6 +137,20 @@ class RobotControlService:
         zero = self._zero_action()
         self._last_action = zero
         return zero
+
+    def _make_action_filter(self, config: ActionFilterConfig | None):
+        if config is None:
+            return None
+        if config.type.lower() == "median":
+            return _MedianLowPassFilter(config.window_size, config.blend_alpha)
+        return None
+
+    def _apply_action_filter(self, actions: Mapping[str, float]) -> dict[str, float]:
+        if not actions:
+            return {}
+        if self._action_filter is None:
+            return dict(actions)
+        return self._action_filter.apply(actions)
 
     def _zero_action(self) -> ActionMessage:
         features = getattr(self.robot, "action_features", {})

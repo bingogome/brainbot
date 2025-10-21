@@ -26,6 +26,14 @@ class ObservationPreprocessConfig:
     interpolation: str = "linear"
 
 
+
+
+@dataclass(slots=True)
+class ActionFilterConfig:
+    type: str = "median"
+    window_size: int = 3
+    blend_alpha: float = 0.3
+
 @dataclass(slots=True)
 class EdgeControlConfig:
     robot: RobotConfig
@@ -38,6 +46,7 @@ class EdgeControlConfig:
     camera_stream: "CameraStreamConfig | None" = None
     metadata: Mapping[str, Any] | None = None
     observation_preprocess: ObservationPreprocessConfig | None = None
+    action_filter: ActionFilterConfig | None = None
 
 
 @dataclass(slots=True)
@@ -50,7 +59,7 @@ class AIClientConfig:
     modality_config_path: str | None = None
     camera_keys: list[str] | None = None
     state_keys: list[str] | None = None
-    action_horizon: int = 10
+    action_horizon: int = 90
 
 
 @dataclass(slots=True)
@@ -112,6 +121,8 @@ def load_edge_config(path: Path) -> EdgeControlConfig:
         camera_stream_cfg = _infer_camera_stream_config(robot_cfg)
     preprocess_raw = raw.pop("observation_preprocess", None)
     preprocess_cfg = ObservationPreprocessConfig(**preprocess_raw) if preprocess_raw else None
+    action_filter_raw = raw.pop("action_filter", None)
+    action_filter_cfg = ActionFilterConfig(**action_filter_raw) if action_filter_raw else None
     return EdgeControlConfig(
         robot=robot_cfg,
         network=network_cfg,
@@ -123,6 +134,7 @@ def load_edge_config(path: Path) -> EdgeControlConfig:
         camera_stream=camera_stream_cfg,
         metadata=raw.pop("metadata", None),
         observation_preprocess=preprocess_cfg,
+        action_filter=action_filter_cfg,
     )
 
 

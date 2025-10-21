@@ -30,6 +30,7 @@ def main(argv: list[str] | None = None) -> None:
     service = RobotControlService(
         robot=robot,
         preprocess_config=config.observation_preprocess,
+        action_filter_config=config.action_filter,
         initial_observation_mode=initial_mode,
     )
     client = CommandChannelClient(

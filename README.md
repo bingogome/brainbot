@@ -152,6 +152,7 @@ camera_stream:
 ```
 
 RobotControlService now switches to numeric-only observations when a teleop provider is active and brings back preprocessed camera frames automatically while AI mode is running, keeping both workflows responsive.
+- Median + low-pass action filtering smooths teleop and inference commands before they reach the robot.
 
 Adjust the modality path, camera keys, and state keys so they match the GR00T build you deploy (add or remove base/mount keys as needed).
 
@@ -204,6 +205,10 @@ observation_preprocess:
   target_height: 224
   target_width: 224
   interpolation: linear
+action_filter:
+  type: median
+  window_size: 5
+  blend_alpha: 0.3
 camera_stream:
   host: 0.0.0.0
   port: 7005
