@@ -28,8 +28,9 @@ from lerobot.datasets.utils import build_dataset_frame, combine_feature_dicts
 from lerobot.datasets.video_utils import VideoEncodingManager
 from lerobot.robots import Robot, make_robot_from_config
 from lerobot.utils.constants import ACTION, OBS_STR
-from lerobot.utils.control_utils import sanity_check_dataset_name, sanity_check_dataset_robot_compatibility
+from lerobot.utils.control_utils import init_keyboard_listener, sanity_check_dataset_name, sanity_check_dataset_robot_compatibility
 from lerobot.utils.import_utils import register_third_party_devices
+from lerobot.utils.utils import log_say
 from lerobot.utils.visualization_utils import init_rerun, log_rerun_data
 
 from brainbot_core.proto import ActionMessage, MessageSerializer, ObservationMessage
@@ -228,6 +229,9 @@ class DataCollectionCommandProvider(CommandProvider):
         self._display_data = bool(config.display_data)
         self._complete_logged = False
         self._task = config.dataset.single_task
+        self._listener = None
+        self._events: dict[str, bool] | None = None
+        self._play_sounds = bool(config.play_sounds)
 
     def wants_full_observation(self) -> bool:
         return True
@@ -268,6 +272,7 @@ class DataCollectionCommandProvider(CommandProvider):
         self._video_manager = VideoEncodingManager(self._dataset)
         self._video_manager.__enter__()
         self._video_context_active = True
+        self._listener, self._events = init_keyboard_listener()
 
         if self._display_data:
             try:
@@ -322,18 +327,21 @@ class DataCollectionCommandProvider(CommandProvider):
             except Exception as exc:
                 logger.debug("[data] remote teleop shutdown encountered: %s", exc)
             self._remote_provider = None
-            if self._spec_robot is not None:
-                try:
-                    self._spec_robot.disconnect()
-                except Exception:
-                    pass
-                self._spec_robot = None
-            self._dataset = None
-            self._dataset_features = None
-            self._video_manager = None
-            self._state = "idle"
-            self._state_deadline = None
-            self._complete_logged = False
+        self._spec_robot = None
+        self._dataset = None
+        self._dataset_features = None
+        self._video_manager = None
+        self._state = "idle"
+        self._state_deadline = None
+        self._complete_logged = False
+        if self._listener is not None:
+            try:
+                self._listener.stop()
+            except Exception:
+                pass
+        self._listener = None
+        self._events = None
+        log_say("Exiting", self._play_sounds)
 
     def compute_command(self, observation: ObservationMessage) -> ActionMessage:
         if self._dataset is None:
@@ -439,12 +447,15 @@ class DataCollectionCommandProvider(CommandProvider):
         target = self._target_episodes or "?"
         prefix = "Starting" if fresh else "Resuming"
         logger.info("[data] %s recording for episode %s/%s (%.1fs)", prefix, current, target, self._episode_seconds)
+        if self._dataset is not None:
+            log_say(f"Recording episode {self._dataset.num_episodes}", self._play_sounds)
 
     def _enter_reset(self, now: float) -> None:
         self._state = "reset"
         self._recording_enabled = False
         self._state_deadline = now + self._reset_seconds
         logger.info("[data] reset window for %.1f seconds", self._reset_seconds)
+        log_say("Reset the environment", self._play_sounds)
 
     def _mark_complete(self) -> None:
         self._state = "complete"
@@ -457,6 +468,11 @@ class DataCollectionCommandProvider(CommandProvider):
                 self._target_episodes or self._episodes_recorded,
             )
             self._complete_logged = True
+        log_say("Stop recording", self._play_sounds, blocking=True)
+        if self._events:
+            self._events["exit_early"] = False
+            self._events["rerecord_episode"] = False
+            self._events["stop_recording"] = False
 
     def _finalize_episode(self) -> None:
         if not self._dataset:
@@ -484,17 +500,54 @@ class DataCollectionCommandProvider(CommandProvider):
                 logger.warning("[data] failed to save partial episode: %s", exc)
 
     def _update_state(self, now: float) -> None:
-        if self._state == "record" and self._state_deadline is not None and now >= self._state_deadline:
-            self._finalize_episode()
-            if self._target_episodes and self._episodes_recorded >= self._target_episodes:
-                self._mark_complete()
-                return
-            if self._reset_seconds > 0:
-                self._enter_reset(now)
-            else:
-                self._begin_recording(now)
-        elif self._state == "reset" and self._state_deadline is not None and now >= self._state_deadline:
-            self._begin_recording(now)
+        events = self._events or {}
+
+        if events.get("stop_recording") and self._state != "complete":
+            events["stop_recording"] = False
+            events["exit_early"] = False
+            events["rerecord_episode"] = False
+            self._mark_complete()
+            return
+
+        if self._state == "record":
+            deadline_reached = self._state_deadline is not None and now >= self._state_deadline
+            exit_requested = events.get("exit_early", False)
+            if deadline_reached or exit_requested:
+                self._finalize_episode()
+                if events.get("rerecord_episode"):
+                    events["rerecord_episode"] = False
+                    events["exit_early"] = False
+                    if self._dataset is not None:
+                        self._dataset.clear_episode_buffer()
+                    logger.info("[data] re-recording current episode on user request")
+                    log_say("Re-record episode", self._play_sounds)
+                    self._begin_recording(now)
+                    return
+                events["exit_early"] = False
+                if self._target_episodes and self._episodes_recorded >= self._target_episodes:
+                    self._mark_complete()
+                    return
+                if events.get("stop_recording"):
+                    events["stop_recording"] = False
+                    self._mark_complete()
+                    return
+                if self._reset_seconds > 0:
+                    self._enter_reset(now)
+                else:
+                    self._begin_recording(now)
+        elif self._state == "reset":
+            deadline_reached = self._state_deadline is not None and now >= self._state_deadline
+            exit_requested = events.get("exit_early", False) or events.get("stop_recording", False)
+            if deadline_reached or exit_requested:
+                events["exit_early"] = False
+                if events.get("stop_recording"):
+                    events["stop_recording"] = False
+                    self._mark_complete()
+                    return
+                if self._target_episodes and self._episodes_recorded >= self._target_episodes:
+                    self._mark_complete()
+                else:
+                    self._begin_recording(now)
 
 class LocalTeleopCommandProvider(CommandProvider):
     def __init__(
