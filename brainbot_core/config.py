@@ -10,6 +10,7 @@ import yaml
 
 from lerobot.robots.config import RobotConfig
 from lerobot.teleoperators.config import TeleoperatorConfig
+from lerobot.scripts.lerobot_record import DatasetRecordConfig
 
 @dataclass(slots=True)
 class NetworkConfig:
@@ -75,25 +76,6 @@ class TeleopEndpointConfig:
     mode: Literal["remote", "local"]
     remote: RemoteTeleopConfig | None = None
     local: TeleoperatorConfig | None = None
-
-
-@dataclass(slots=True)
-class DatasetRecordConfig:
-    repo_id: str
-    single_task: str
-    root: str | Path | None = None
-    fps: int = 30
-    episode_time_s: float = 60.0
-    reset_time_s: float = 60.0
-    num_episodes: int = 50
-    video: bool = True
-    push_to_hub: bool = True
-    private: bool = False
-    tags: list[str] | None = None
-    num_image_writer_processes: int = 0
-    num_image_writer_threads_per_camera: int = 4
-    video_encoding_batch_size: int = 1
-    rename_map: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

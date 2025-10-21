@@ -28,7 +28,7 @@ from lerobot.datasets.utils import build_dataset_frame, combine_feature_dicts
 from lerobot.datasets.video_utils import VideoEncodingManager
 from lerobot.robots import Robot, make_robot_from_config
 from lerobot.utils.constants import ACTION, OBS_STR
-from lerobot.utils.control_utils import sanity_check_dataset_robot_compatibility
+from lerobot.utils.control_utils import sanity_check_dataset_name, sanity_check_dataset_robot_compatibility
 from lerobot.utils.import_utils import register_third_party_devices
 from lerobot.utils.visualization_utils import init_rerun, log_rerun_data
 
@@ -48,21 +48,27 @@ def _numeric_only(values: dict[str, Any]) -> dict[str, float]:
 def _numeric_observation_payload(observation: ObservationMessage) -> dict[str, Any]:
     serialized = MessageSerializer.to_dict(observation)
     payload = serialized.get("payload", {})
+    trimmed: dict[str, Any] = {}
     if isinstance(payload, Mapping):
         robot_raw = payload.get("robot", {})
         base_raw = payload.get("base", {})
-        numeric_robot = _numeric_only(robot_raw) if isinstance(robot_raw, Mapping) else {}
-        numeric_base = _numeric_only(base_raw) if isinstance(base_raw, Mapping) else {}
-        trimmed_payload: dict[str, Any] = {"robot": numeric_robot, "base": numeric_base}
+        trimmed["robot"] = _numeric_only(robot_raw) if isinstance(robot_raw, Mapping) else {}
+        trimmed["base"] = _numeric_only(base_raw) if isinstance(base_raw, Mapping) else {}
         for key, value in payload.items():
             if key in {"robot", "base"}:
                 continue
             if isinstance(value, (int, float)):
-                trimmed_payload[key] = float(value)
-        serialized["payload"] = trimmed_payload
+                trimmed[key] = float(value)
     else:
-        serialized["payload"] = {"robot": {}, "base": {}}
-    return serialized
+        trimmed["robot"] = {}
+        trimmed["base"] = {}
+    trimmed["timestamp_ns"] = serialized.get("timestamp_ns", observation.timestamp_ns)
+    metadata = serialized.get("metadata")
+    if isinstance(metadata, Mapping):
+        trimmed["metadata"] = {
+            key: value for key, value in metadata.items() if isinstance(value, (int, float, str))
+        }
+    return trimmed
 
 
 class CommandProvider(ABC):
@@ -203,6 +209,7 @@ class DataCollectionCommandProvider(CommandProvider):
         self._teleop_endpoint: TeleopEndpointConfig | None = config.teleop
         self._teleop: Teleoperator | None = None
         self._remote_provider: "RemoteTeleopCommandProvider | None" = None
+        self._dataset_cfg = config.dataset
         self._teleop_action_processor: RobotProcessorPipeline | None = None
         self._robot_action_processor: RobotProcessorPipeline | None = None
         self._robot_observation_processor: RobotProcessorPipeline | None = None
@@ -253,6 +260,7 @@ class DataCollectionCommandProvider(CommandProvider):
         else:
             raise ValueError(f"Unsupported teleop mode '{teleop_endpoint.mode}' for data collection")
         self._spec_robot = make_robot_from_config(self._config.robot)
+        self._dataset_cfg = self._config.dataset
         self._dataset_features = self._build_dataset_features(self._spec_robot)
         self._dataset = self._init_dataset(self._dataset_features)
         self._episodes_recorded = self._dataset.num_episodes
@@ -294,12 +302,12 @@ class DataCollectionCommandProvider(CommandProvider):
                 except Exception as exc:  # pragma: no cover - defensive
                     logger.warning("[data] failed to close video manager: %s", exc)
                 self._video_context_active = False
-            if self._dataset and self._config.dataset.push_to_hub:
+            if self._dataset and self._dataset_cfg.push_to_hub:
                 try:
                     self._dataset.push_to_hub(
-                        tags=self._config.dataset.tags, private=self._config.dataset.private
+                        tags=self._dataset_cfg.tags, private=self._dataset_cfg.private
                     )
-                    logger.info("[data] dataset pushed to hub (%s)", self._config.dataset.repo_id)
+                    logger.info("[data] dataset pushed to hub (%s)", self._dataset_cfg.repo_id)
                 except Exception as exc:
                     logger.warning("[data] failed to push dataset to hub: %s", exc)
         if self._teleop is not None:
@@ -380,17 +388,17 @@ class DataCollectionCommandProvider(CommandProvider):
         teleop_features = aggregate_pipeline_dataset_features(
             pipeline=self._teleop_action_processor,
             initial_features=create_initial_features(action=action_specs),
-            use_videos=self._config.dataset.video,
+            use_videos=self._dataset_cfg.video,
         )
         observation_features = aggregate_pipeline_dataset_features(
             pipeline=self._robot_observation_processor,
             initial_features=create_initial_features(observation=obs_specs),
-            use_videos=self._config.dataset.video,
+            use_videos=self._dataset_cfg.video,
         )
         return combine_feature_dicts(teleop_features, observation_features)
 
     def _init_dataset(self, features: dict[str, dict]) -> LeRobotDataset:
-        cfg = self._config.dataset
+        cfg = self._dataset_cfg
         root = cfg.root
         camera_count = len(getattr(self._spec_robot, "cameras", {})) if self._spec_robot else 0
         writer_threads = cfg.num_image_writer_threads_per_camera * camera_count
@@ -409,6 +417,7 @@ class DataCollectionCommandProvider(CommandProvider):
             except Exception as exc:
                 raise ValueError(f"Existing dataset metadata incompatible with current robot: {exc}") from exc
         else:
+            sanity_check_dataset_name(cfg.repo_id, None)
             dataset = LeRobotDataset.create(
                 repo_id=cfg.repo_id,
                 fps=cfg.fps,
