@@ -83,19 +83,23 @@ class DataCollectionCommandProvider(CommandProvider):
             events["exit_early"] = True
             logger.info("[data-control] advance command acknowledged")
             print("[data-control] advance command acknowledged")
+            force_process = True
         elif command in {"rerecord", "redo"}:
             events["rerecord_episode"] = True
             events["exit_early"] = True
             logger.info("[data-control] rerecord command acknowledged")
             print("[data-control] rerecord command acknowledged")
+            force_process = True
         elif command in {"reset"}:
             events["reset_requested"] = True
             logger.info("[data-control] reset command acknowledged")
             print("[data-control] reset command acknowledged")
+            force_process = True
         elif command in {"resume", "next_stage"}:
             events["continue_after_reset"] = True
             logger.info("[data-control] continue command acknowledged")
             print("[data-control] continue command acknowledged")
+            force_process = True
         elif command == "start":
             logger.info("[data-control] start command acknowledged")
             print("[data-control] start command acknowledged")
@@ -211,7 +215,7 @@ class DataCollectionCommandProvider(CommandProvider):
         logger.debug(
             "[data] compute_command state=%s record=%s buffer=%s", self._state, self._recording_enabled, buffer_size
         )
-        if buffer_size % 50 == 0:
+        if buffer_size % 100 == 0:
             print(f"[data] state={self._state} record={self._recording_enabled} buffer={buffer_size}")
         if self._remote_provider is not None:
             action_msg = self._remote_provider.compute_command(observation)
@@ -227,7 +231,7 @@ class DataCollectionCommandProvider(CommandProvider):
             teleop_action = dict(teleop_action)
         keys = list(teleop_action.keys())
         logger.debug("[data] teleop action keys: %s", keys)
-        if buffer_size % 50 == 0:
+        if buffer_size % 100 == 0:
             print(f"[data] teleop action keys: {keys}")
 
         robot_action = teleop_action
@@ -250,7 +254,7 @@ class DataCollectionCommandProvider(CommandProvider):
             self._dataset.add_frame(frame)
             frame_size = getattr(self._dataset, "episode_buffer", {}).get("size", 0)
             logger.debug("[data] buffered frame count: %s", frame_size)
-            if frame_size % 50 == 0:
+            if frame_size % 100 == 0:
                 print(f"[data] buffered frame count: {frame_size}")
             if self._display_data:
                 try:
