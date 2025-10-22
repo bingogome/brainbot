@@ -17,6 +17,11 @@ from typing import Any, Callable
 import msgpack
 import numpy as np
 import zmq
+import logging
+import time
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -211,12 +216,15 @@ class BaseZMQClient:
         if self.api_token:
             request["api_token"] = self.api_token
 
+        send_start = time.perf_counter()
         try:
             self.socket.send(MsgSerializer.to_bytes(request))
         except zmq.error.ZMQError:
             self._init_socket()
             raise
+        send_elapsed = time.perf_counter() - send_start
 
+        recv_start = time.perf_counter()
         try:
             message = self.socket.recv()
         except zmq.error.Again as exc:
@@ -225,8 +233,17 @@ class BaseZMQClient:
         except zmq.error.ZMQError:
             self._init_socket()
             raise
+        recv_elapsed = time.perf_counter() - recv_start
 
         response = MsgSerializer.from_bytes(message)
+        total_elapsed = send_elapsed + recv_elapsed
+        if endpoint == "get_action" and self.__class__.__name__ == "ActionInferenceClient":
+            logger.debug(
+                "[transport-profile] send=%.3fms recv=%.3fms total=%.3fms",
+                send_elapsed * 1000.0,
+                recv_elapsed * 1000.0,
+                total_elapsed * 1000.0,
+            )
 
         if "error" in response:
             raise RuntimeError(f"Server error: {response['error']}")

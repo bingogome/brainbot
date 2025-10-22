@@ -73,13 +73,59 @@ python brainbot/scripts/pc/run_teleop_server.py \
 (AR controllers are configured similarly using `mode: local`.)
 
 ### Mode Control & Visualization
-- Send JSON commands on the edge machine to swap providers:
+- Send JSON commands in runtime on the edge machine to swap providers:
   - `{"teleop": "leader"}`
+  - `{"teleop": "ar"}`
+  - `{"teleop": "joycon"}`
+  - `{"teleop": "gamepad"}`
   - `{"infer": "Pick up the block using the left arm and transfer!"}`
+  - `{"infer": "Open the shelf"}`
+  - `{"data": {"command": "start"}}` (start data recording mode)
   - `{"idle": ""}`
   - `{"shutdown": ""}` (gracefully shuts down robot controller, then the hub)
 - View live command traces, numeric history, and camera previews at `http://<edge-ip>:8080/`.
 - `run_thor_preview.py` keeps WebViz and camera streams active before the robot agent starts.
+
+### Data Recording Mode
+
+Brainbot includes a data collection mode that integrates with LeRobot datasets for recording robot demonstrations. This mode captures synchronized robot observations, actions, and video streams for training imitation learning policies.
+
+#### Configuration
+
+Add a data recording configuration to your command service YAML.
+
+#### Usage
+
+1. **Start Data Recording Mode:**
+   ```json
+   {"data": {"command": "start"}}
+   ```
+
+2. **Control Recording Session:**
+   - **Begin Recording:** `{"data": {"command": "resume"}}` or `{"data": {"command": "go"}}`
+   - **Pause Recording:** `{"data": {"command": "reset"}}`
+   - **Save Current Episode:** `{"data": {"command": "next"}}` or `{"data": {"command": "skip"}}`
+   - **Stop Data Collection:** `{"data": {"command": "stop"}}` or `{"data": {"command": "end"}}`
+   - **Re-record Episode:** `{"data": {"command": "rerecord"}}` or `{"data": {"command": "redo"}}`
+
+3. **Typical Recording Workflow:**
+   ```bash
+   # Start data mode
+   echo '{"data": {"command": "start"}}' | nc localhost 6000
+   
+   # Set up environment and begin recording
+   echo '{"data": {"command": "resume"}}' | nc localhost 6000
+   
+   # Perform demonstration...
+   
+   # Save episode and move to next
+   echo '{"data": {"command": "next"}}' | nc localhost 6000
+   
+   # Repeat for multiple episodes...
+   
+   # Stop when done
+   echo '{"data": {"command": "stop"}}' | nc localhost 6000
+   ```
 
 ## Config Examples
 
@@ -90,11 +136,22 @@ teleops:
     mode: remote
     host: 192.168.22.171
     port: 7001
+    timeout_ms: 1000
+  joycon:
+    mode: remote
+    host: 192.168.22.171
+    port: 7002
+    timeout_ms: 1000
+  gamepad:
+    mode: remote
+    host: 192.168.22.171
+    port: 7003
+    timeout_ms: 1000
 ai:
-  host: 127.0.0.1
+  host: 172.17.0.3
   port: 5555
   timeout_ms: 10000
-  modality_config_path: /path/to/bi_so101_modality.json
+  modality_config_path: scripts/thor/xlerobot_modality.json
   camera_keys: [left, right, top]
   state_keys:
     - left_shoulder_pan.pos
@@ -109,6 +166,11 @@ ai:
     - right_wrist_flex.pos
     - right_wrist_roll.pos
     - right_gripper.pos
+    - x.vel
+    - y.vel
+    - theta.vel
+    - mount_pan.pos
+    - mount_tilt.pos
 network:
   host: 127.0.0.1
   port: 6000
@@ -118,18 +180,40 @@ webviz:
 camera_stream:
   host: 127.0.0.1
   port: 7005
+  quality: 70
+  sources:
+    - name: left
+      path: robot.cameras.left
+      fps: 15
+    - name: right
+      path: robot.cameras.right
+      fps: 15
+    - name: top
+      path: robot.cameras.top
+      fps: 15
 ```
 
-Set `modality_config_path`, `camera_keys`, and `state_keys` to values that match your GR00T model's `experiment_cfg/modality.json`.
+RobotControlService now switches to numeric-only observations when a teleop provider is active and brings back preprocessed camera frames automatically while AI mode is running, keeping both workflows responsive.
+- Median + low-pass action filtering smooths teleop and inference commands before they reach the robot.
+
+Adjust the modality path, camera keys, and state keys so they match the GR00T build you deploy (add or remove base/mount keys as needed).
 
 `brainbot/scripts/pc/leader_teleop.yaml`:
 ```yaml
 teleop:
   mode: local
   config:
-    type: bi_so101_leader
-    left_arm_port: /dev/ttyACM1
-    right_arm_port: /dev/ttyACM0
+    type: xlerobot_leader_gamepad
+    id: leader
+    arms:
+      left_arm_port: /dev/ttyACM0
+      right_arm_port: /dev/ttyACM1
+    base:
+      joystick_index: 0
+      max_speed_mps: 0.8
+      deadzone: 0.15
+      yaw_speed_deg: 45
+    mount: {}
 network:
   host: 0.0.0.0
   port: 7001
@@ -138,9 +222,16 @@ network:
 `brainbot/scripts/thor/thor_robot.yaml`:
 ```yaml
 robot:
-  type: bi_so101_follower
-  left_arm_port: /dev/ttyACM1
-  right_arm_port: /dev/ttyACM0
+  type: xlerobot
+  id: follower
+  arms:
+    left_arm_port: /dev/ttyACM2
+    right_arm_port: /dev/ttyACM3
+  base:
+    port: /dev/ttyACM4
+    wheel_radius_m: 0.05
+    base_radius_m: 0.125
+  mount: {}
   cameras:
     left:  {type: opencv, index_or_path: 8, width: 640, height: 480, fps: 15, enable_mjpeg: true}
     right: {type: opencv, index_or_path: 6, width: 640, height: 480, fps: 15, enable_mjpeg: true}
@@ -151,7 +242,15 @@ network:
 loop_hz: 40
 max_missed_actions: 2
 calibrate_on_start: true
-observation_adapter: identity        # keep raw arrays for GR00T + streamer
+observation_adapter: identity        # start in full mode; dynamic switching keeps teleop fast
+observation_preprocess:
+  target_height: 224
+  target_width: 224
+  interpolation: linear
+action_filter:
+  type: median
+  window_size: 5
+  blend_alpha: 0.3
 camera_stream:
   host: 0.0.0.0
   port: 7005

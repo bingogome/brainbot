@@ -24,6 +24,7 @@ class CommandChannelClient(BaseZMQClient):
         max_retries: int = 1,
     ):
         self.max_retries = max_retries
+        self._last_observation_hint = "numeric"
         super().__init__(host=host, port=port, timeout_ms=timeout_ms, api_token=api_token)
 
     def _init_socket(self) -> None:
@@ -60,6 +61,9 @@ class CommandChannelClient(BaseZMQClient):
                 action_payload = response["action"]
             except KeyError as exc:
                 raise RuntimeError(f"Malformed action response: {response}") from exc
+            hint = response.get("observation_hint")
+            if isinstance(hint, str) and hint in {"numeric", "full"}:
+                self._last_observation_hint = hint
             return MessageSerializer.ensure_action(action_payload)
 
     def sync_config(self, config: dict[str, Any]) -> dict[str, Any]:
@@ -67,3 +71,6 @@ class CommandChannelClient(BaseZMQClient):
         if "error" in response:
             raise RuntimeError(f"Command service rejected sync_config: {response['error']}")
         return response
+
+    def last_observation_hint(self) -> str:
+        return self._last_observation_hint

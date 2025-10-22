@@ -1,38 +1,37 @@
-# Brainbot command service configuration running on Jetson Thor
+# Brainbot command service configuration for XLerobot on Jetson Thor
 teleops:
   leader:
     mode: remote
-    host: 192.168.22.171  
+    host: 192.168.22.171
     port: 7001
     timeout_ms: 1000
   joycon:
     mode: remote
-    host: 192.168.22.171   
+    host: 192.168.22.171
     port: 7002
     timeout_ms: 1000
   gamepad:
     mode: remote
-    host: 192.168.22.171 
+    host: 192.168.22.171
     port: 7003
     timeout_ms: 1000
   ar:
     mode: remote
-    host: 192.168.22.171  
+    host: 127.0.0.1
     port: 7004
     timeout_ms: 1000
-  # localteleop: # This will just be a lerobot teleoperator without needing ip
+  # localteleop: # Example local teleop if running on-device
   #   mode: local
   #   config:
-  #     type: some_local_teleop
+  #     type: xlerobot_leader_gamepad
   #     id: local
-  #     # ... additional teleop fields ...
 
 ai:
-  host: 172.17.0.3        # GR00T running in container on Thor
+  host: 172.17.0.2        # GR00T running in container on Thor
   port: 5555
-  timeout_ms: 10000
+  timeout_ms: 5000
   instruction_key: language_instruction
-  modality_config_path: /workspace/Isaac-GR00T/examples/SO-100/bi_so101_modality.json
+  modality_config_path: scripts/thor/xlerobot_modality.json
   camera_keys: [left, right, top]
   state_keys:
     - left_shoulder_pan.pos
@@ -47,6 +46,12 @@ ai:
     - right_wrist_flex.pos
     - right_wrist_roll.pos
     - right_gripper.pos
+    - x.vel
+    - y.vel
+    - theta.vel
+    - mount_pan.pos
+    - mount_tilt.pos
+  action_horizon: 50
 
 network:
   host: 127.0.0.1
@@ -57,6 +62,19 @@ webviz:
 camera_stream:
   host: 127.0.0.1
   port: 7005
+  quality: 70
+  sources:
+    - name: left
+      path: robot.cameras.left
+      fps: 15
+    - name: right
+      path: robot.cameras.right
+      fps: 15
+    - name: top
+      path: robot.cameras.top
+      fps: 15
+data:
+  config_path: thor_data.yaml
 default_mode: idle
 metadata:
-  node: thor
+  node: xlerobot

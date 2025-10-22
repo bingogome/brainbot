@@ -28,6 +28,11 @@ class ShutdownModeEvent(ModeEvent):
     reason: str | None = None
 
 
+@dataclass(slots=True)
+class DataModeEvent(ModeEvent):
+    command: str
+
+
 ModeEventListener = Callable[[ModeEvent], None]
 
 

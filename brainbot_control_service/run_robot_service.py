@@ -8,7 +8,7 @@ from lerobot.robots.utils import make_robot_from_config
 
 from brainbot_core.config import EdgeControlConfig, load_edge_config
 
-from . import CameraStreamer, CommandChannelClient, CommandLoop, NoOpMobileBase, RobotControlService
+from . import CameraStreamer, CommandChannelClient, CommandLoop, RobotControlService
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -19,16 +19,20 @@ def main(argv: list[str] | None = None) -> None:
 
     config: EdgeControlConfig = load_edge_config(args.config)
     robot = make_robot_from_config(config.robot)
-    obs_adapter_name = config.observation_adapter.lower()
-
-    if obs_adapter_name == "identity":
-        observation_adapter = lambda obs: obs  # noqa: E731
-    elif obs_adapter_name == "numeric_only":
-        observation_adapter = None
+    adapter_name = config.observation_adapter.lower()
+    if adapter_name == "identity":
+        initial_mode = "full"
+    elif adapter_name == "numeric_only":
+        initial_mode = "numeric"
     else:
         raise ValueError(f"Unknown observation_adapter '{config.observation_adapter}'")
 
-    service = RobotControlService(robot=robot, base=NoOpMobileBase(), observation_adapter=observation_adapter)
+    service = RobotControlService(
+        robot=robot,
+        preprocess_config=config.observation_preprocess,
+        action_filter_config=config.action_filter,
+        initial_observation_mode=initial_mode,
+    )
     client = CommandChannelClient(
         host=config.network.host,
         port=config.network.port,

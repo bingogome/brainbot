@@ -1,27 +1,33 @@
-# Brainbot robot agent configuration for Jetson Thor
+# Brainbot robot agent configuration for XLerobot on Jetson Thor
 robot:
-  type: bi_so101_follower
-  id: follower
-  left_arm_port: /dev/ttyACM0
-  right_arm_port: /dev/ttyACM1
+  type: xlerobot
+  arms:
+    left_arm_port: /dev/ttyACM0
+    right_arm_port: /dev/ttyACM1
+    id: follower
+  base:
+    port: /dev/ttyACM2
+    wheel_radius_m: 0.05
+    base_radius_m: 0.125
+  mount: {}
   cameras:
     left:
       type: opencv
-      index_or_path: 8
+      index_or_path: 2
       width: 640
       height: 480
       fps: 15
       enable_mjpeg: true
     right:
       type: opencv
-      index_or_path: 6
+      index_or_path: 0
       width: 640
       height: 480
       fps: 15
       enable_mjpeg: true
     top:
       type: opencv
-      index_or_path: 4
+      index_or_path: 8
       width: 640
       height: 480
       fps: 15
@@ -30,10 +36,18 @@ network:
   host: 127.0.0.1
   port: 6000
 loop_hz: 40
-max_missed_actions: 2
+max_missed_actions: 3
 fallback_action: {}
 calibrate_on_start: true
 observation_adapter: identity
+observation_preprocess:
+  target_height: 224
+  target_width: 224
+  interpolation: linear
+action_filter:
+  type: median
+  window_size: 4
+  blend_alpha: 0.3
 camera_stream:
   host: 0.0.0.0
   port: 7005
@@ -49,4 +63,4 @@ camera_stream:
       path: robot.cameras.top
       fps: 15
 metadata:
-  site: thor
+  site: xlerobot

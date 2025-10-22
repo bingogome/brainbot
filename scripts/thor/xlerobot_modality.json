@@ -1,0 +1,148 @@
+{
+  "state": {
+    "left_arm": {
+      "start": 0,
+      "end": 5,
+      "dtype": "float32",
+      "range": [
+        -100.0,
+        100.0
+      ]
+    },
+    "left_gripper": {
+      "start": 5,
+      "end": 6,
+      "dtype": "float32",
+      "range": [
+        0.0,
+        100.0
+      ]
+    },
+    "right_arm": {
+      "start": 6,
+      "end": 11,
+      "dtype": "float32",
+      "range": [
+        -100.0,
+        100.0
+      ]
+    },
+    "right_gripper": {
+      "start": 11,
+      "end": 12,
+      "dtype": "float32",
+      "range": [
+        0.0,
+        100.0
+      ]
+    },
+    "mobile_base_translation": {
+      "start": 12,
+      "end": 14,
+      "dtype": "float32",
+      "range": [
+        -1.0,
+        1.0
+      ]
+    },
+    "mobile_base_yaw": {
+      "start": 14,
+      "end": 15,
+      "dtype": "float32",
+      "range": [
+        -90.0,
+        90.0
+      ]
+    },
+    "camera_mount": {
+      "start": 15,
+      "end": 17,
+      "dtype": "float32",
+      "range": [
+        -100.0,
+        100.0
+      ]
+    }
+  },
+  "action": {
+    "left_arm": {
+      "start": 0,
+      "end": 5,
+      "dtype": "float32",
+      "range": [
+        -100.0,
+        100.0
+      ]
+    },
+    "left_gripper": {
+      "start": 5,
+      "end": 6,
+      "dtype": "float32",
+      "range": [
+        0.0,
+        100.0
+      ]
+    },
+    "right_arm": {
+      "start": 6,
+      "end": 11,
+      "dtype": "float32",
+      "range": [
+        -100.0,
+        100.0
+      ]
+    },
+    "right_gripper": {
+      "start": 11,
+      "end": 12,
+      "dtype": "float32",
+      "range": [
+        0.0,
+        100.0
+      ]
+    },
+    "mobile_base_translation": {
+      "start": 12,
+      "end": 14,
+      "dtype": "float32",
+      "range": [
+        -1.0,
+        1.0
+      ]
+    },
+    "mobile_base_yaw": {
+      "start": 14,
+      "end": 15,
+      "dtype": "float32",
+      "range": [
+        -90.0,
+        90.0
+      ]
+    },
+    "camera_mount": {
+      "start": 15,
+      "end": 17,
+      "dtype": "float32",
+      "range": [
+        -100.0,
+        100.0
+      ]
+    }
+  },
+  "video": {
+    "left": {
+      "original_key": "observation.images.left"
+    },
+    "top": {
+      "original_key": "observation.images.top"
+    },
+    "right": {
+      "original_key": "observation.images.right"
+    }
+  },
+  "annotation": {
+    "human.task_description": {
+      "original_key": "task_index"
+    }
+  }
+}

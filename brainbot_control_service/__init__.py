@@ -1,4 +1,3 @@
-from .base import MobileBaseInterface, NoOpMobileBase
 from .camera_streamer import CameraStreamer
 from .command_client import CommandChannelClient
 from .command_loop import CommandLoop
@@ -8,7 +7,5 @@ __all__ = [
     "CameraStreamer",
     "CommandChannelClient",
     "CommandLoop",
-    "MobileBaseInterface",
-    "NoOpMobileBase",
     "RobotControlService",
 ]

@@ -1,4 +1,4 @@
-# Generic teleop server template for XLerobot
+# Teleop server configuration for XLerobot data collection sessions
 teleop:
   mode: local
   config:
@@ -16,4 +16,4 @@ teleop:
     mount: {}
 network:
   host: 0.0.0.0
-  port: 7001
+  port: 7010
