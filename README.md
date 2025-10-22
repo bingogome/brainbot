@@ -111,20 +111,20 @@ Add a data recording configuration to your command service YAML.
 3. **Typical Recording Workflow:**
    ```bash
    # Start data mode
-   echo '{"data": {"command": "start"}}' | nc localhost 6000
+   {"data": {"command": "start"}}
    
    # Set up environment and begin recording
-   echo '{"data": {"command": "resume"}}' | nc localhost 6000
+   {"data": {"command": "resume"}}
    
    # Perform demonstration...
    
    # Save episode and move to next
-   echo '{"data": {"command": "next"}}' | nc localhost 6000
+   {"data": {"command": "next"}}
    
    # Repeat for multiple episodes...
    
    # Stop when done
-   echo '{"data": {"command": "stop"}}' | nc localhost 6000
+   {"data": {"command": "stop"}}
    ```
 
 ## Config Examples
