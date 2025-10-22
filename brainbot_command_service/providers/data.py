@@ -70,6 +70,36 @@ class DataCollectionCommandProvider(CommandProvider):
     def wants_full_observation(self) -> bool:
         return True
 
+    def _ensure_video_manager(self) -> None:
+        if self._dataset is None:
+            return
+        if not self._video_context_active or self._video_manager is None:
+            self._video_manager = VideoEncodingManager(self._dataset)
+            try:
+                self._video_manager.__enter__()
+            except Exception as exc:  # pragma: no cover - defensive
+                self._video_manager = None
+                self._video_context_active = False
+                logger.warning("[data] failed to start video encoding manager: %s", exc)
+            else:
+                self._video_context_active = True
+
+    def _close_video_manager(self) -> None:
+        if self._video_manager and self._video_context_active:
+            try:
+                self._video_manager.__exit__(None, None, None)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("[data] failed to finalise video encoding: %s", exc)
+            finally:
+                self._video_manager = None
+                self._video_context_active = False
+        elif self._dataset is not None:
+            try:
+                self._dataset.finalize()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("[data] dataset finalise encountered: %s", exc)
+            self._video_context_active = False
+
     def handle_control_command(self, command: str) -> None:
         command = command.strip().lower()
         now = time.perf_counter()
@@ -158,9 +188,7 @@ class DataCollectionCommandProvider(CommandProvider):
         self._dataset = self._init_dataset(self._dataset_features)
         self._episodes_recorded = self._dataset.num_episodes
 
-        self._video_manager = VideoEncodingManager(self._dataset)
-        self._video_manager.__enter__()
-        self._video_context_active = True
+        self._ensure_video_manager()
         if self._display_data:
             try:
                 init_rerun(session_name="brainbot-data")
@@ -188,12 +216,7 @@ class DataCollectionCommandProvider(CommandProvider):
             self._finalize_partial_episode()
         finally:
             self._recording_enabled = False
-            if self._video_manager and self._video_context_active:
-                try:
-                    self._video_manager.__exit__(None, None, None)
-                except Exception as exc:  # pragma: no cover - defensive
-                    logger.warning("[data] failed to close video manager: %s", exc)
-                self._video_context_active = False
+            self._close_video_manager()
             if self._dataset and self._dataset_cfg.push_to_hub:
                 try:
                     self._dataset.push_to_hub(
@@ -334,6 +357,7 @@ class DataCollectionCommandProvider(CommandProvider):
         return dataset
 
     def _begin_recording(self, now: float, *, fresh: bool = False) -> None:
+        self._ensure_video_manager()
         self._state = "record"
         self._recording_enabled = True
         self._state_deadline = now + self._episode_seconds
@@ -366,6 +390,7 @@ class DataCollectionCommandProvider(CommandProvider):
             self._complete_logged = True
         log_say("Stop recording", self._play_sounds, blocking=True)
         print("[data-state] recording complete")
+        self._close_video_manager()
         if self._events:
             self._events["exit_early"] = False
             self._events["rerecord_episode"] = False
@@ -390,6 +415,8 @@ class DataCollectionCommandProvider(CommandProvider):
         self._episodes_recorded = self._dataset.num_episodes
         logger.info("[data] saved episode %s", self._episodes_recorded)
         print(f"[data] saved episode {self._episodes_recorded}")
+        logger.debug("[data] dataset stored at %s", self._dataset.root)
+        print(f"[data] dataset root: {self._dataset.root}")
 
     def _finalize_partial_episode(self) -> None:
         if not (self._dataset and self._recording_enabled):
