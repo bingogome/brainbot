@@ -73,33 +73,28 @@ class DataCollectionCommandProvider(CommandProvider):
     def handle_control_command(self, command: str) -> None:
         command = command.strip().lower()
         events = self._events
-        force_process = False
+        force_process = command in {"stop", "end", "finish"}
         if command in {"stop", "end", "finish"}:
             events["stop_recording"] = True
             logger.info("[data-control] stop command acknowledged")
             print("[data-control] stop command acknowledged")
-            force_process = True
         elif command in {"next", "skip"}:
             events["exit_early"] = True
             logger.info("[data-control] advance command acknowledged")
             print("[data-control] advance command acknowledged")
-            force_process = True
         elif command in {"rerecord", "redo"}:
             events["rerecord_episode"] = True
             events["exit_early"] = True
             logger.info("[data-control] rerecord command acknowledged")
             print("[data-control] rerecord command acknowledged")
-            force_process = True
         elif command in {"reset"}:
             events["reset_requested"] = True
             logger.info("[data-control] reset command acknowledged")
             print("[data-control] reset command acknowledged")
-            force_process = True
         elif command in {"resume", "next_stage"}:
             events["continue_after_reset"] = True
             logger.info("[data-control] continue command acknowledged")
             print("[data-control] continue command acknowledged")
-            force_process = True
         elif command == "start":
             logger.info("[data-control] start command acknowledged")
             print("[data-control] start command acknowledged")
