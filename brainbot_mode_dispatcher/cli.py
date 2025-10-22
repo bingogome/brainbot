@@ -5,6 +5,7 @@ import queue
 import threading
 
 from .events import (
+    DataModeEvent,
     IdleModeEvent,
     InferenceModeEvent,
     ModeEventDispatcher,
@@ -76,6 +77,21 @@ class CLIModeDispatcher(ModeEventDispatcher):
     def _handle_command(self, data: dict) -> None:
         queue_obj = self._queue
         if queue_obj is None:
+            return
+        if "data" in data:
+            value = data["data"]
+            if isinstance(value, dict):
+                target = value.get("mode")
+                command = value.get("command")
+                if target is not None:
+                    queue_obj.put(TeleopModeEvent(alias=str(target) if target else "data"))
+                if command:
+                    queue_obj.put(DataModeEvent(command=str(command)))
+            else:
+                if value in (None, ""):
+                    queue_obj.put(TeleopModeEvent(alias="data"))
+                else:
+                    queue_obj.put(DataModeEvent(command=str(value)))
             return
         if "teleop" in data:
             queue_obj.put(TeleopModeEvent(alias=str(data["teleop"])))

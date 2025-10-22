@@ -1,4 +1,5 @@
 from .events import (
+    DataModeEvent,
     IdleModeEvent,
     InferenceModeEvent,
     ModeEvent,
@@ -11,6 +12,7 @@ from .cli import CLIModeDispatcher
 
 __all__ = [
     "InferenceModeEvent",
+    "DataModeEvent",
     "IdleModeEvent",
     "CLIModeDispatcher",
     "ModeEvent",

@@ -1,11 +1,19 @@
-# Teleop server configuration for leader arms on operator PC
+# Teleop server configuration for XLerobot leader teleop (arms + base)
 teleop:
   mode: local
   config:
-    type: bi_so101_leader
+    type: xlerobot_leader_gamepad
     id: leader
-    left_arm_port: /dev/ttyACM0
-    right_arm_port: /dev/ttyACM1
+    arms:
+      left_arm_port: /dev/ttyACM0
+      right_arm_port: /dev/ttyACM1
+      id: leader
+    base:
+      joystick_index: 0
+      max_speed_mps: 0.8
+      deadzone: 0.15
+      yaw_speed_deg: 45
+    mount: {}
 network:
   host: 0.0.0.0
   port: 7001
