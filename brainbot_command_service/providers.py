@@ -236,6 +236,27 @@ class DataCollectionCommandProvider(CommandProvider):
     def wants_full_observation(self) -> bool:
         return True
 
+    def handle_control_command(self, command: str) -> None:
+        command = command.strip().lower()
+        events = self._events
+        if events is None:
+            logger.warning("[data] control command '%s' ignored (no events dictionary)", command)
+            return
+        if command in {"stop", "end", "finish"}:
+            events["stop_recording"] = True
+        elif command in {"next", "skip"}:
+            events["exit_early"] = True
+        elif command in {"rerecord", "redo"}:
+            events["rerecord_episode"] = True
+            events["exit_early"] = True
+        elif command in {"reset"}:
+            events["reset_requested"] = True
+        elif command in {"start", "resume"}:
+            # no-op; recording automatically resumes when state machine transitions
+            logger.info("[data] start/resume command acknowledged")
+        else:
+            logger.warning("[data] unknown control command: %s", command)
+
     def prepare(self) -> None:
         register_third_party_devices()
         teleop_endpoint = self._teleop_endpoint
@@ -273,6 +294,8 @@ class DataCollectionCommandProvider(CommandProvider):
         self._video_manager.__enter__()
         self._video_context_active = True
         self._listener, self._events = init_keyboard_listener()
+        if self._events is not None:
+            self._events.setdefault("reset_requested", False)
 
         if self._display_data:
             try:
@@ -473,6 +496,7 @@ class DataCollectionCommandProvider(CommandProvider):
             self._events["exit_early"] = False
             self._events["rerecord_episode"] = False
             self._events["stop_recording"] = False
+            self._events["reset_requested"] = False
 
     def _finalize_episode(self) -> None:
         if not self._dataset:
@@ -506,8 +530,23 @@ class DataCollectionCommandProvider(CommandProvider):
             events["stop_recording"] = False
             events["exit_early"] = False
             events["rerecord_episode"] = False
+            events["reset_requested"] = False
             self._mark_complete()
             return
+
+        reset_requested = events.get("reset_requested", False)
+        if reset_requested:
+            events["reset_requested"] = False
+            if self._state == "record":
+                self._finalize_episode()
+                if self._target_episodes and self._episodes_recorded >= self._target_episodes:
+                    self._mark_complete()
+                    return
+                self._enter_reset(now)
+                return
+            if self._state == "reset":
+                self._begin_recording(now)
+                return
 
         if self._state == "record":
             deadline_reached = self._state_deadline is not None and now >= self._state_deadline

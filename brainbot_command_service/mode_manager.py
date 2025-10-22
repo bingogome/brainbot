@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from brainbot_mode_dispatcher import IdleModeEvent, InferenceModeEvent, ModeEvent, ModeEventDispatcher, ShutdownModeEvent, TeleopModeEvent
+from brainbot_mode_dispatcher import DataModeEvent, IdleModeEvent, InferenceModeEvent, ModeEvent, ModeEventDispatcher, ShutdownModeEvent, TeleopModeEvent
 
-from .providers import AICommandProvider, CommandProvider
+from .providers import AICommandProvider, CommandProvider, DataCollectionCommandProvider
 from .service import CommandService
 
 
@@ -52,6 +52,18 @@ class ModeManager:
                 self._service.set_mode(key)
             except ValueError as exc:
                 print(f"[mode-manager] {exc}")
+            return
+
+        if isinstance(event, DataModeEvent):
+            try:
+                handler = self._service.get_mode_handler("data")
+            except KeyError:
+                print("[mode-manager] data provider not available")
+                return
+            if isinstance(handler, DataCollectionCommandProvider):
+                handler.handle_control_command(event.command)
+            else:
+                print("[mode-manager] active data provider missing handler")
             return
 
         if isinstance(event, InferenceModeEvent) and self._ai_key:
