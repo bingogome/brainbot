@@ -31,6 +31,7 @@ from . import (
     AICommandProvider,
     CommandProvider,
     CommandService,
+    DataCollectionCommandProvider,
     IdleCommandProvider,
     LocalTeleopCommandProvider,
     ModeManager,
@@ -315,6 +316,10 @@ def main(argv: list[str] | None = None) -> None:
 
         teleop_aliases[name] = key
         teleop_aliases[key] = key
+    if config.data is not None:
+        providers["data"] = DataCollectionCommandProvider(config.data)
+        teleop_aliases["data"] = "data"
+        teleop_aliases["teleop:data"] = "data"
     ai_cfg = config.ai or AIClientConfig()
     ai_client = ActionInferenceClient(
         host=ai_cfg.host,

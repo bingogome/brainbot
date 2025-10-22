@@ -1,0 +1,567 @@
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any
+
+try:
+    from lerobot.processor import RobotProcessorPipeline, make_default_processors
+except ImportError:  # compatibility with newer LeRobot releases
+    from lerobot.processor.factory import make_default_processors  # type: ignore
+
+    RobotProcessorPipeline = Any  # type: ignore
+
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
+from lerobot.datasets.utils import build_dataset_frame, combine_feature_dicts
+from lerobot.datasets.video_utils import VideoEncodingManager
+from lerobot.robots import Robot, make_robot_from_config
+from lerobot.teleoperators.teleoperator import Teleoperator
+from lerobot.teleoperators.utils import make_teleoperator_from_config
+from lerobot.utils.constants import ACTION, OBS_STR
+from lerobot.utils.control_utils import sanity_check_dataset_name, sanity_check_dataset_robot_compatibility
+from lerobot.utils.import_utils import register_third_party_devices
+from lerobot.utils.utils import log_say
+from lerobot.utils.visualization_utils import init_rerun, log_rerun_data
+
+from brainbot_core.config import DataModeConfig, TeleopEndpointConfig
+from brainbot_core.proto import ActionMessage, ObservationMessage
+
+from .base import CommandProvider
+from .teleop import RemoteTeleopCommandProvider, numeric_observation_payload
+
+logger = logging.getLogger(__name__)
+
+
+class DataCollectionCommandProvider(CommandProvider):
+    def __init__(self, config: DataModeConfig):
+        self._config = config
+        self._teleop_endpoint: TeleopEndpointConfig | None = config.teleop
+        self._teleop: Teleoperator | None = None
+        self._remote_provider: RemoteTeleopCommandProvider | None = None
+        self._dataset_cfg = config.dataset
+        self._teleop_action_processor: RobotProcessorPipeline | None = None
+        self._robot_action_processor: RobotProcessorPipeline | None = None
+        self._robot_observation_processor: RobotProcessorPipeline | None = None
+        self._dataset: LeRobotDataset | None = None
+        self._dataset_features: dict[str, dict] | None = None
+        self._video_manager: VideoEncodingManager | None = None
+        self._video_context_active = False
+        self._spec_robot: Robot | None = None
+        self._state: str = "idle"
+        self._state_deadline: float | None = None
+        self._episode_seconds = max(1e-3, float(config.dataset.episode_time_s))
+        self._reset_seconds = max(0.0, float(config.dataset.reset_time_s))
+        self._target_episodes = max(0, int(config.dataset.num_episodes))
+        self._episodes_recorded = 0
+        self._recording_enabled = False
+        self._display_data = bool(config.display_data)
+        self._complete_logged = False
+        self._task = config.dataset.single_task
+        self._events: dict[str, bool] = {
+            "exit_early": False,
+            "rerecord_episode": False,
+            "stop_recording": False,
+            "reset_requested": False,
+            "continue_after_reset": False,
+        }
+        self._play_sounds = bool(config.play_sounds)
+
+    def wants_full_observation(self) -> bool:
+        return True
+
+    def _ensure_video_manager(self) -> None:
+        if self._dataset is None:
+            logger.debug("[data] _ensure_video_manager: no dataset, skipping")
+            return
+        if not self._video_context_active or self._video_manager is None:
+            logger.info("[data] starting VideoEncodingManager")
+            self._video_manager = VideoEncodingManager(self._dataset)
+            try:
+                self._video_manager.__enter__()
+                self._video_context_active = True
+                logger.debug("[data] VideoEncodingManager initialized successfully")
+            except Exception as exc:  # pragma: no cover - defensive
+                self._video_manager = None
+                self._video_context_active = False
+                logger.error("[data] failed to start video encoding manager: %s", exc, exc_info=True)
+        else:
+            logger.debug("[data] VideoEncodingManager already active")
+
+    def _close_video_manager(self) -> None:
+        logger.debug("[data] closing video manager (active=%s, exists=%s)", self._video_context_active, self._video_manager is not None)
+        
+        if self._video_manager and self._video_context_active:
+            try:
+                self._video_manager.__exit__(None, None, None)
+                logger.debug("[data] VideoEncodingManager closed successfully")
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("[data] failed to finalise video encoding: %s", exc, exc_info=True)
+            finally:
+                self._video_manager = None
+                self._video_context_active = False
+                
+        elif self._dataset is not None:
+            try:
+                self._dataset.finalize()
+                logger.debug("[data] dataset finalized")
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("[data] dataset finalise encountered: %s", exc)
+            self._video_context_active = False
+
+    def handle_control_command(self, command: str) -> None:
+        command = command.strip().lower()
+        now = time.perf_counter()
+        if command in {"stop", "end", "finish"}:
+            logger.info("[data-control] stop command acknowledged")
+            print("Stopping data collection...")
+            if self._state == "record":
+                print("Saving current episode...")
+                self._finalize_episode()
+                print("Episode saved successfully")
+            self._clear_events()
+            self._mark_complete()
+            print(f"Data collection complete! Total episodes recorded: {self._episodes_recorded}")
+            return
+        if command in {"next", "skip"}:
+            logger.info("[data-control] advance command acknowledged")
+            print("Moving to next episode...")
+            if self._state == "record":
+                print("Saving current episode...")
+                self._finalize_episode()
+                print("Episode saved successfully")
+            self._clear_events()
+            self._enter_reset(now)
+            print(f"Episode {self._episodes_recorded} complete. Please reset the environment for the next episode.")
+            return
+        if command == "reset":
+            logger.info("[data-control] reset command acknowledged")
+            print("Resetting for next episode...")
+            if self._state == "record":
+                print("Saving current episode first...")
+                self._finalize_episode()
+                print("Episode saved successfully")
+            self._clear_events()
+            self._enter_reset(now)
+            print("Recording paused - please set up the environment, then use 'resume' to start recording")
+            return
+        if command in {"resume", "go"}:
+            logger.info("[data-control] go command acknowledged")
+            print("Resuming data recording...")
+            self._enter_record(now)
+            print("Recording started - robot actions are being logged")
+            return
+        if command in {"rerecord", "redo"}:
+            logger.info("[data-control] rerecord command acknowledged")
+            if self._dataset is not None:
+                self._dataset.clear_episode_buffer()
+            self._clear_events()
+            self._begin_recording(now, fresh=True)
+            return
+        if command == "start":
+            logger.info("[data-control] start command acknowledged")
+            self._clear_events()
+            self._begin_recording(now, fresh=True)
+            return
+
+        logger.warning("[data-control] unknown command: %s", command)
+        self._process_events(force=False)
+
+    def prepare(self) -> None:
+        register_third_party_devices()
+        teleop_endpoint = self._teleop_endpoint
+        if teleop_endpoint is None:
+            raise ValueError("Data mode requires a teleoperator configuration")
+
+        self._teleop_action_processor, self._robot_action_processor, self._robot_observation_processor = (
+            make_default_processors()
+        )
+        if teleop_endpoint.mode == "remote":
+            if teleop_endpoint.remote is None:
+                raise ValueError("Remote teleop configuration requires host/port settings")
+            self._remote_provider = RemoteTeleopCommandProvider(
+                host=teleop_endpoint.remote.host,
+                port=teleop_endpoint.remote.port,
+                timeout_ms=teleop_endpoint.remote.timeout_ms,
+                api_token=teleop_endpoint.remote.api_token,
+                observation_adapter=numeric_observation_payload,
+            )
+            self._remote_provider.prepare()
+        elif teleop_endpoint.mode == "local":
+            if teleop_endpoint.local is None:
+                raise ValueError("Local teleop configuration missing 'config' block")
+            self._teleop = make_teleoperator_from_config(teleop_endpoint.local)
+            self._teleop.connect()
+        else:
+            raise ValueError(f"Unsupported teleop mode '{teleop_endpoint.mode}' for data collection")
+        self._spec_robot = make_robot_from_config(self._config.robot)
+        self._dataset_cfg = self._config.dataset
+        self._dataset_features = self._build_dataset_features(self._spec_robot)
+        self._dataset = self._init_dataset(self._dataset_features)
+        self._episodes_recorded = self._dataset.num_episodes
+        logger.info("[data] dataset initialized with %d existing episodes", self._episodes_recorded)
+
+        self._ensure_video_manager()
+        if self._display_data:
+            try:
+                init_rerun(session_name="brainbot-data")
+            except Exception as exc:  # pragma: no cover - optional dependency
+                logger.warning("[data] failed to initialise rerun visualisation: %s", exc)
+                self._display_data = False
+
+        now = time.perf_counter()
+        if self._target_episodes and self._episodes_recorded >= self._target_episodes:
+            self._state = "complete"
+            self._recording_enabled = False
+            self._state_deadline = None
+            if not self._complete_logged:
+                logger.info(
+                    "[data] dataset already has %s/%s episodes; teleop passthrough only",
+                    self._episodes_recorded,
+                    self._target_episodes,
+                )
+                self._complete_logged = True
+        else:
+            self._begin_recording(now, fresh=True)
+
+    def shutdown(self) -> None:
+        try:
+            self._finalize_partial_episode()
+        finally:
+            self._recording_enabled = False
+            self._close_video_manager()
+            if self._dataset and self._dataset_cfg.push_to_hub:
+                try:
+                    self._dataset.push_to_hub(
+                        tags=self._dataset_cfg.tags, private=self._dataset_cfg.private
+                    )
+                    logger.info("[data] dataset pushed to hub (%s)", self._dataset_cfg.repo_id)
+                except Exception as exc:
+                    logger.warning("[data] failed to push dataset to hub: %s", exc)
+        if self._teleop is not None:
+            try:
+                self._teleop.disconnect()
+            except Exception as exc:
+                logger.warning("[data] teleop disconnect failed: %s", exc)
+            self._teleop = None
+        if self._remote_provider is not None:
+            try:
+                self._remote_provider.shutdown()
+            except Exception as exc:
+                logger.debug("[data] remote teleop shutdown encountered: %s", exc)
+            self._remote_provider = None
+        self._spec_robot = None
+        logger.debug("[data] shutdown cleanup completed")
+        self._dataset = None
+        self._dataset_features = None
+        self._video_manager = None
+        self._state = "idle"
+        self._state_deadline = None
+        self._complete_logged = False
+        log_say("Exiting", self._play_sounds)
+
+    def compute_command(self, observation: ObservationMessage) -> ActionMessage:
+        if self._dataset is None:
+            raise RuntimeError("Data mode provider is not prepared")
+
+        robot_obs = observation.payload.get("robot", {})
+        buffer_size = getattr(self._dataset, "episode_buffer", {}).get("size", 0)
+        logger.debug(
+            "[data] compute_command state=%s record=%s buffer=%s", self._state, self._recording_enabled, buffer_size
+        )
+        if self._remote_provider is not None:
+            action_msg = self._remote_provider.compute_command(observation)
+            raw_action = dict(action_msg.actions)
+        else:
+            if self._teleop is None:
+                raise RuntimeError("Teleoperator not available")
+            raw_action = self._teleop.get_action()
+        teleop_action = raw_action
+        if self._teleop_action_processor:
+            teleop_action = self._teleop_action_processor((raw_action, robot_obs))
+        if not isinstance(teleop_action, dict):
+            teleop_action = dict(teleop_action)
+        logger.debug("[data] teleop action keys: %s", list(teleop_action.keys()))
+
+        robot_action = teleop_action
+        if self._robot_action_processor:
+            robot_action = self._robot_action_processor((teleop_action, robot_obs))
+        if not isinstance(robot_action, dict):
+            robot_action = dict(robot_action)
+
+        if self._recording_enabled:
+            if self._dataset is None:
+                logger.error("[data] dataset is None during recording!")
+                return ActionMessage(actions=dict(robot_action))
+            if self._robot_observation_processor:
+                obs_processed = self._robot_observation_processor(robot_obs)
+            else:
+                obs_processed = robot_obs
+            if not isinstance(obs_processed, dict):
+                obs_processed = dict(obs_processed)
+            features = self._dataset.features
+            observation_frame = build_dataset_frame(features, obs_processed, prefix=OBS_STR)
+            action_frame = build_dataset_frame(features, teleop_action, prefix=ACTION)
+            frame = {**observation_frame, **action_frame, "task": self._task}
+            
+            # Check if save operation is in progress before adding frame
+            episode_buffer = getattr(self._dataset, "episode_buffer", None)
+            if episode_buffer and "size" in episode_buffer:
+                # Buffer is intact, safe to add frame
+                self._dataset.add_frame(frame)
+                frame_size = episode_buffer.get("size", 0)
+                logger.debug("[data] buffered frame count: %s", frame_size)
+            else:
+                # Save operation is in progress (episode_buffer structure modified)
+                logger.debug("[data] skipping frame addition - save_episode in progress")
+                # Track skip count for debugging
+                if hasattr(self, '_skip_message_count'):
+                    self._skip_message_count += 1
+                else:
+                    self._skip_message_count = 1
+            
+            if self._display_data:
+                try:
+                    log_rerun_data(observation=obs_processed, action=teleop_action)
+                except Exception as exc:
+                    logger.debug("[data] rerun logging failed: %s", exc)
+
+        now = time.perf_counter()
+        self._update_state(now)
+
+        return ActionMessage(actions=dict(robot_action))
+
+    def _build_dataset_features(self, robot: Robot) -> dict[str, dict]:
+        action_specs = getattr(robot, "action_features", {})
+        obs_specs = getattr(robot, "observation_features", {})
+        teleop_features = aggregate_pipeline_dataset_features(
+            pipeline=self._teleop_action_processor,
+            initial_features=create_initial_features(action=action_specs),
+            use_videos=self._dataset_cfg.video,
+        )
+        observation_features = aggregate_pipeline_dataset_features(
+            pipeline=self._robot_observation_processor,
+            initial_features=create_initial_features(observation=obs_specs),
+            use_videos=self._dataset_cfg.video,
+        )
+        return combine_feature_dicts(teleop_features, observation_features)
+
+    def _init_dataset(self, features: dict[str, dict]) -> LeRobotDataset:
+        cfg = self._dataset_cfg
+        root = cfg.root
+        camera_count = len(getattr(self._spec_robot, "cameras", {})) if self._spec_robot else 0
+        writer_threads = cfg.num_image_writer_threads_per_camera * camera_count
+
+        logger.debug("[data] init_dataset: resume=%s, cameras=%d, threads=%d, videos=%s", 
+                    self._config.resume, camera_count, writer_threads, cfg.video)
+
+        if self._config.resume:
+            logger.info("[data] resuming existing dataset: %s", cfg.repo_id)
+            dataset = LeRobotDataset(
+                cfg.repo_id,
+                root=root,
+                batch_encoding_size=cfg.video_encoding_batch_size,
+            )
+            if cfg.num_image_writer_processes or writer_threads:
+                dataset.start_image_writer(cfg.num_image_writer_processes, writer_threads)
+            try:
+                if self._spec_robot:
+                    sanity_check_dataset_robot_compatibility(dataset, self._spec_robot, cfg.fps, features)
+            except Exception as exc:
+                raise ValueError(f"Existing dataset metadata incompatible with current robot: {exc}") from exc
+        else:
+            logger.info("[data] creating new dataset: %s", cfg.repo_id)
+            sanity_check_dataset_name(cfg.repo_id, None)
+            dataset = LeRobotDataset.create(
+                repo_id=cfg.repo_id,
+                fps=cfg.fps,
+                features=features,
+                root=root,
+                robot_type=getattr(self._spec_robot, "name", None),
+                use_videos=cfg.video,
+                image_writer_processes=cfg.num_image_writer_processes,
+                image_writer_threads=writer_threads,
+                batch_encoding_size=cfg.video_encoding_batch_size,
+            )
+        
+        logger.debug("[data] dataset configured: root=%s, episodes=%d, videos=%s", 
+                    dataset.root, dataset.num_episodes, getattr(dataset, 'use_videos', False))
+        
+        return dataset
+
+    def _begin_recording(self, now: float, *, fresh: bool = False) -> None:
+        self._ensure_video_manager()
+        
+        self._state = "record"
+        self._recording_enabled = True
+        self._state_deadline = now + self._episode_seconds
+        current = self._episodes_recorded + 1
+        target = self._target_episodes or "?"
+        prefix = "Starting" if fresh else "Resuming"
+        logger.info("[data] %s recording for episode %s/%s (%.1fs)", prefix, current, target, self._episode_seconds)
+        
+        if self._dataset is not None:
+            log_say(f"Recording episode {self._dataset.num_episodes}", self._play_sounds)
+
+    def _enter_reset(self, now: float) -> None:
+        self._state = "reset"
+        self._recording_enabled = False
+        self._state_deadline = now + self._reset_seconds
+        logger.info("[data] reset window for %.1f seconds", self._reset_seconds)
+        log_say("Reset the environment", self._play_sounds)
+
+    def _mark_complete(self) -> None:
+        self._state = "complete"
+        self._recording_enabled = False
+        self._state_deadline = None
+        if not self._complete_logged:
+            logger.info(
+                "[data] completed %s/%s episodes",
+                self._episodes_recorded,
+                self._target_episodes or self._episodes_recorded,
+            )
+            self._complete_logged = True
+        log_say("Stop recording", self._play_sounds, blocking=True)
+        logger.info("[data] recording complete: %d/%d episodes", self._episodes_recorded, self._target_episodes or self._episodes_recorded)
+        self._close_video_manager()
+        if self._events:
+            self._events["exit_early"] = False
+            self._events["rerecord_episode"] = False
+            self._events["stop_recording"] = False
+            self._events["reset_requested"] = False
+            self._events["continue_after_reset"] = False
+
+    def _finalize_episode(self) -> None:
+        if self._dataset is None:
+            logger.warning("[data] _finalize_episode: dataset is None")
+            return
+        
+        episode_buffer = getattr(self._dataset, "episode_buffer", None)
+        if not episode_buffer:
+            logger.warning("[data] no episode_buffer found")
+            return
+            
+        size = episode_buffer.get("size", 0)
+        if not size:
+            logger.debug("[data] no frames to finalize, skipping save")
+            return
+        
+        logger.info("[data] finalizing episode with %s frames", size)
+        
+        try:
+            self._dataset.save_episode()
+            self._episodes_recorded = self._dataset.num_episodes
+            logger.info("[data] saved episode %s", self._episodes_recorded)
+            
+        except Exception as exc:
+            logger.error("[data] save_episode failed: %s", exc, exc_info=True)
+            raise
+
+    def _finalize_partial_episode(self) -> None:
+        if not (self._dataset and self._recording_enabled):
+            return
+        buffer = getattr(self._dataset, "episode_buffer", None)
+        if not buffer:
+            return
+        if buffer.get("size", 0):
+            try:
+                self._dataset.save_episode()
+                self._episodes_recorded = self._dataset.num_episodes
+                logger.info("[data] saved partial episode on shutdown")
+            except Exception as exc:
+                logger.warning("[data] failed to save partial episode: %s", exc)
+
+    def _process_events(self, force: bool = False) -> None:
+        logger.debug("[data] processing events force=%s", force)
+        self._update_state(time.perf_counter(), force=force)
+
+    def _clear_events(self) -> None:
+        for key in self._events:
+            self._events[key] = False
+
+    def _update_state(self, now: float, force: bool = False) -> None:
+        events = self._events or {}
+        logger.debug(
+            "[data-state] state=%s force=%s events=%s deadline=%s",
+            self._state,
+            force,
+            {k: v for k, v in events.items() if v},
+            self._state_deadline,
+        )
+        active = {k: v for k, v in events.items() if v}
+        if active or force:
+            logger.debug("[data-state] state=%s force=%s events=%s", self._state, force, active)
+
+        if events.get("stop_recording") and self._state != "complete":
+            if self._state in {"record", "reset"}:
+                logger.info("[data] stop requested; finalizing current episode")
+                self._finalize_episode()
+            events["stop_recording"] = False
+            events["exit_early"] = False
+            events["rerecord_episode"] = False
+            events["reset_requested"] = False
+            self._mark_complete()
+            return
+
+        reset_requested = events.get("reset_requested", False)
+        continue_after_reset = events.get("continue_after_reset", False)
+        if reset_requested and not continue_after_reset:
+            events["reset_requested"] = False
+            if self._state == "record":
+                self._finalize_episode()
+                if self._target_episodes and self._episodes_recorded >= self._target_episodes:
+                    self._mark_complete()
+                    return
+                self._enter_reset(now)
+                return
+            if self._state == "reset":
+                self._begin_recording(now)
+                return
+
+        if continue_after_reset:
+            events["continue_after_reset"] = False
+            events["reset_requested"] = False
+            if self._state == "reset":
+                logger.debug("[data-state] continue_after_reset -> begin_recording")
+                self._begin_recording(now)
+                return
+
+        if self._state == "record":
+            deadline_reached = self._state_deadline is not None and now >= self._state_deadline
+            exit_requested = events.get("exit_early", False) or force
+            if deadline_reached or exit_requested:
+                self._finalize_episode()
+                if events.get("rerecord_episode"):
+                    events["rerecord_episode"] = False
+                    events["exit_early"] = False
+                    if self._dataset is not None:
+                        self._dataset.clear_episode_buffer()
+                    logger.info("[data] re-recording current episode on user request")
+                    log_say("Re-record episode", self._play_sounds)
+                    self._begin_recording(now)
+                    return
+                events["exit_early"] = False
+                if self._target_episodes and self._episodes_recorded >= self._target_episodes:
+                    self._mark_complete()
+                    return
+                if events.get("stop_recording"):
+                    events["stop_recording"] = False
+                    self._mark_complete()
+                    return
+                if self._reset_seconds > 0 and not force:
+                    self._enter_reset(now)
+                else:
+                    self._begin_recording(now)
+        elif self._state == "reset":
+            deadline_reached = self._state_deadline is not None and now >= self._state_deadline
+            exit_requested = events.get("exit_early", False) or events.get("stop_recording", False) or force
+            if deadline_reached or exit_requested:
+                events["exit_early"] = False
+                if events.get("stop_recording"):
+                    events["stop_recording"] = False
+                    self._mark_complete()
+                    return
+                if self._target_episodes and self._episodes_recorded >= self._target_episodes:
+                    self._mark_complete()
+                else:
+                    self._begin_recording(now)

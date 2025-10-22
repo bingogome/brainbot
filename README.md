@@ -80,10 +80,52 @@ python brainbot/scripts/pc/run_teleop_server.py \
   - `{"teleop": "gamepad"}`
   - `{"infer": "Pick up the block using the left arm and transfer!"}`
   - `{"infer": "Open the shelf"}`
+  - `{"data": {"command": "start"}}` (start data recording mode)
   - `{"idle": ""}`
   - `{"shutdown": ""}` (gracefully shuts down robot controller, then the hub)
 - View live command traces, numeric history, and camera previews at `http://<edge-ip>:8080/`.
 - `run_thor_preview.py` keeps WebViz and camera streams active before the robot agent starts.
+
+### Data Recording Mode
+
+Brainbot includes a data collection mode that integrates with LeRobot datasets for recording robot demonstrations. This mode captures synchronized robot observations, actions, and video streams for training imitation learning policies.
+
+#### Configuration
+
+Add a data recording configuration to your command service YAML.
+
+#### Usage
+
+1. **Start Data Recording Mode:**
+   ```json
+   {"data": {"command": "start"}}
+   ```
+
+2. **Control Recording Session:**
+   - **Begin Recording:** `{"data": {"command": "resume"}}` or `{"data": {"command": "go"}}`
+   - **Pause Recording:** `{"data": {"command": "reset"}}`
+   - **Save Current Episode:** `{"data": {"command": "next"}}` or `{"data": {"command": "skip"}}`
+   - **Stop Data Collection:** `{"data": {"command": "stop"}}` or `{"data": {"command": "end"}}`
+   - **Re-record Episode:** `{"data": {"command": "rerecord"}}` or `{"data": {"command": "redo"}}`
+
+3. **Typical Recording Workflow:**
+   ```bash
+   # Start data mode
+   echo '{"data": {"command": "start"}}' | nc localhost 6000
+   
+   # Set up environment and begin recording
+   echo '{"data": {"command": "resume"}}' | nc localhost 6000
+   
+   # Perform demonstration...
+   
+   # Save episode and move to next
+   echo '{"data": {"command": "next"}}' | nc localhost 6000
+   
+   # Repeat for multiple episodes...
+   
+   # Stop when done
+   echo '{"data": {"command": "stop"}}' | nc localhost 6000
+   ```
 
 ## Config Examples
 
