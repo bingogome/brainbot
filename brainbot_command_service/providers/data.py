@@ -19,7 +19,7 @@ from lerobot.robots import Robot, make_robot_from_config
 from lerobot.teleoperators.teleoperator import Teleoperator
 from lerobot.teleoperators.utils import make_teleoperator_from_config
 from lerobot.utils.constants import ACTION, OBS_STR
-from lerobot.utils.control_utils import init_keyboard_listener, sanity_check_dataset_name, sanity_check_dataset_robot_compatibility
+from lerobot.utils.control_utils import sanity_check_dataset_name, sanity_check_dataset_robot_compatibility
 from lerobot.utils.import_utils import register_third_party_devices
 from lerobot.utils.utils import log_say
 from lerobot.utils.visualization_utils import init_rerun, log_rerun_data
@@ -58,8 +58,12 @@ class DataCollectionCommandProvider(CommandProvider):
         self._display_data = bool(config.display_data)
         self._complete_logged = False
         self._task = config.dataset.single_task
-        self._listener = None
-        self._events: dict[str, bool] | None = None
+        self._events: dict[str, bool] = {
+            "exit_early": False,
+            "rerecord_episode": False,
+            "stop_recording": False,
+            "reset_requested": False,
+        }
         self._play_sounds = bool(config.play_sounds)
 
     def wants_full_observation(self) -> bool:
@@ -68,18 +72,19 @@ class DataCollectionCommandProvider(CommandProvider):
     def handle_control_command(self, command: str) -> None:
         command = command.strip().lower()
         events = self._events
-        if events is None:
-            logger.warning("[data] control command '%s' ignored (no events dictionary)", command)
-            return
         if command in {"stop", "end", "finish"}:
             events["stop_recording"] = True
+            logger.info("[data] stop command acknowledged")
         elif command in {"next", "skip"}:
             events["exit_early"] = True
+            logger.info("[data] advance command acknowledged")
         elif command in {"rerecord", "redo"}:
             events["rerecord_episode"] = True
             events["exit_early"] = True
+            logger.info("[data] rerecord command acknowledged")
         elif command in {"reset"}:
             events["reset_requested"] = True
+            logger.info("[data] reset command acknowledged")
         elif command in {"start", "resume"}:
             logger.info("[data] start/resume command acknowledged")
         else:
@@ -121,10 +126,6 @@ class DataCollectionCommandProvider(CommandProvider):
         self._video_manager = VideoEncodingManager(self._dataset)
         self._video_manager.__enter__()
         self._video_context_active = True
-        self._listener, self._events = init_keyboard_listener()
-        if self._events is not None:
-            self._events.setdefault("reset_requested", False)
-
         if self._display_data:
             try:
                 init_rerun(session_name="brainbot-data")
@@ -185,13 +186,6 @@ class DataCollectionCommandProvider(CommandProvider):
         self._state = "idle"
         self._state_deadline = None
         self._complete_logged = False
-        if self._listener is not None:
-            try:
-                self._listener.stop()
-            except Exception:
-                pass
-        self._listener = None
-        self._events = None
         log_say("Exiting", self._play_sounds)
 
     def compute_command(self, observation: ObservationMessage) -> ActionMessage:
