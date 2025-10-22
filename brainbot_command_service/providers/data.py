@@ -89,6 +89,10 @@ class DataCollectionCommandProvider(CommandProvider):
             events["reset_requested"] = True
             logger.info("[data-control] reset command acknowledged")
             print("[data-control] reset command acknowledged")
+        elif command in {"resume", "next_stage"}:
+            events["continue_after_reset"] = True
+            logger.info("[data-control] continue command acknowledged")
+            print("[data-control] continue command acknowledged")
         elif command in {"start", "resume"}:
             logger.info("[data-control] start/resume command acknowledged")
             print("[data-control] start/resume command acknowledged")
@@ -395,7 +399,8 @@ class DataCollectionCommandProvider(CommandProvider):
             return
 
         reset_requested = events.get("reset_requested", False)
-        if reset_requested:
+        continue_after_reset = events.get("continue_after_reset", False)
+        if reset_requested and not continue_after_reset:
             events["reset_requested"] = False
             if self._state == "record":
                 self._finalize_episode()
@@ -405,6 +410,14 @@ class DataCollectionCommandProvider(CommandProvider):
                 self._enter_reset(now)
                 return
             if self._state == "reset":
+                self._begin_recording(now)
+                return
+
+        if continue_after_reset:
+            events["continue_after_reset"] = False
+            events["reset_requested"] = False
+            if self._state == "reset":
+                print("[data-state] continue_after_reset -> begin_recording")
                 self._begin_recording(now)
                 return
 
@@ -430,7 +443,7 @@ class DataCollectionCommandProvider(CommandProvider):
                     events["stop_recording"] = False
                     self._mark_complete()
                     return
-                if self._reset_seconds > 0:
+                if self._reset_seconds > 0 and not force:
                     self._enter_reset(now)
                 else:
                     self._begin_recording(now)
