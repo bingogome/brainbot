@@ -73,10 +73,12 @@ class DataCollectionCommandProvider(CommandProvider):
     def handle_control_command(self, command: str) -> None:
         command = command.strip().lower()
         events = self._events
+        force_process = False
         if command in {"stop", "end", "finish"}:
             events["stop_recording"] = True
             logger.info("[data-control] stop command acknowledged")
             print("[data-control] stop command acknowledged")
+            force_process = True
         elif command in {"next", "skip"}:
             events["exit_early"] = True
             logger.info("[data-control] advance command acknowledged")
@@ -94,13 +96,13 @@ class DataCollectionCommandProvider(CommandProvider):
             events["continue_after_reset"] = True
             logger.info("[data-control] continue command acknowledged")
             print("[data-control] continue command acknowledged")
-        elif command in {"start", "resume"}:
-            logger.info("[data-control] start/resume command acknowledged")
-            print("[data-control] start/resume command acknowledged")
+        elif command == "start":
+            logger.info("[data-control] start command acknowledged")
+            print("[data-control] start command acknowledged")
         else:
             logger.warning("[data-control] unknown command: %s", command)
             print(f"[data-control] unknown command: {command}")
-        self._process_events(force=True)
+        self._process_events(force=force_process)
 
     def prepare(self) -> None:
         register_third_party_devices()
@@ -349,10 +351,12 @@ class DataCollectionCommandProvider(CommandProvider):
             self._events["stop_recording"] = False
             self._events["reset_requested"] = False
             self._events["continue_after_reset"] = False
+            self._events["continue_after_reset"] = False
 
     def _finalize_episode(self) -> None:
         if not self._dataset:
             return
+        print("[data] _finalize_episode invoked")
         if getattr(self._dataset, "episode_buffer", None):
             size = self._dataset.episode_buffer.get("size", 0)
             if not size:
