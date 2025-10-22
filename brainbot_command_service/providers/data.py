@@ -72,45 +72,41 @@ class DataCollectionCommandProvider(CommandProvider):
 
     def _ensure_video_manager(self) -> None:
         if self._dataset is None:
-            print("[data] _ensure_video_manager: no dataset, skipping")
+            logger.debug("[data] _ensure_video_manager: no dataset, skipping")
             return
         if not self._video_context_active or self._video_manager is None:
-            print(f"[data] starting VideoEncodingManager (use_videos={self._dataset.use_videos})")
+            logger.info("[data] starting VideoEncodingManager")
             self._video_manager = VideoEncodingManager(self._dataset)
             try:
                 self._video_manager.__enter__()
-                print("[data] VideoEncodingManager started successfully")
+                self._video_context_active = True
+                logger.debug("[data] VideoEncodingManager initialized successfully")
             except Exception as exc:  # pragma: no cover - defensive
                 self._video_manager = None
                 self._video_context_active = False
-                logger.warning("[data] failed to start video encoding manager: %s", exc)
-                print(f"[data] WARNING: failed to start video encoding manager: {exc}")
-            else:
-                self._video_context_active = True
+                logger.error("[data] failed to start video encoding manager: %s", exc, exc_info=True)
         else:
-            print("[data] VideoEncodingManager already active")
+            logger.debug("[data] VideoEncodingManager already active")
 
     def _close_video_manager(self) -> None:
-        print(f"[data] _close_video_manager called (active={self._video_context_active})")
+        logger.debug("[data] closing video manager (active=%s, exists=%s)", self._video_context_active, self._video_manager is not None)
+        
         if self._video_manager and self._video_context_active:
             try:
-                print("[data] finalizing VideoEncodingManager...")
                 self._video_manager.__exit__(None, None, None)
-                print("[data] VideoEncodingManager finalized successfully")
+                logger.debug("[data] VideoEncodingManager closed successfully")
             except Exception as exc:  # pragma: no cover - defensive
-                logger.warning("[data] failed to finalise video encoding: %s", exc)
-                print(f"[data] WARNING: failed to finalise video encoding: {exc}")
+                logger.warning("[data] failed to finalise video encoding: %s", exc, exc_info=True)
             finally:
                 self._video_manager = None
                 self._video_context_active = False
+                
         elif self._dataset is not None:
             try:
-                print("[data] calling dataset.finalize()...")
                 self._dataset.finalize()
-                print("[data] dataset.finalize() completed")
+                logger.debug("[data] dataset finalized")
             except Exception as exc:  # pragma: no cover - defensive
                 logger.debug("[data] dataset finalise encountered: %s", exc)
-                print(f"[data] dataset.finalize() encountered: {exc}")
             self._video_context_active = False
 
     def handle_control_command(self, command: str) -> None:
@@ -118,40 +114,45 @@ class DataCollectionCommandProvider(CommandProvider):
         now = time.perf_counter()
         if command in {"stop", "end", "finish"}:
             logger.info("[data-control] stop command acknowledged")
-            print("[data-control] stop command acknowledged")
+            print("Stopping data collection...")
             if self._state == "record":
+                print("Saving current episode...")
                 self._finalize_episode()
+                print("Episode saved successfully")
             self._clear_events()
             self._mark_complete()
+            print(f"Data collection complete! Total episodes recorded: {self._episodes_recorded}")
             return
         if command in {"next", "skip"}:
             logger.info("[data-control] advance command acknowledged")
-            print("[data-control] advance command acknowledged")
+            print("Moving to next episode...")
             if self._state == "record":
+                print("Saving current episode...")
                 self._finalize_episode()
+                print("Episode saved successfully")
             self._clear_events()
             self._enter_reset(now)
+            print(f"Episode {self._episodes_recorded} complete. Please reset the environment for the next episode.")
             return
         if command == "reset":
             logger.info("[data-control] reset command acknowledged")
-            print("[data-control] reset command acknowledged")
+            print("Resetting for next episode...")
             if self._state == "record":
+                print("Saving current episode first...")
                 self._finalize_episode()
+                print("Episode saved successfully")
             self._clear_events()
             self._enter_reset(now)
+            print("Recording paused - please set up the environment, then use 'resume' to start recording")
             return
-        if command in {"resume", "next_stage"}:
-            logger.info("[data-control] continue command acknowledged")
-            print("[data-control] continue command acknowledged")
-            if self._state == "reset":
-                self._clear_events()
-                self._begin_recording(now)
-            else:
-                print("[data-control] resume ignored (not in reset)")
+        if command in {"resume", "go"}:
+            logger.info("[data-control] go command acknowledged")
+            print("Resuming data recording...")
+            self._enter_record(now)
+            print("Recording started - robot actions are being logged")
             return
         if command in {"rerecord", "redo"}:
             logger.info("[data-control] rerecord command acknowledged")
-            print("[data-control] rerecord command acknowledged")
             if self._dataset is not None:
                 self._dataset.clear_episode_buffer()
             self._clear_events()
@@ -159,13 +160,11 @@ class DataCollectionCommandProvider(CommandProvider):
             return
         if command == "start":
             logger.info("[data-control] start command acknowledged")
-            print("[data-control] start command acknowledged")
             self._clear_events()
             self._begin_recording(now, fresh=True)
             return
 
         logger.warning("[data-control] unknown command: %s", command)
-        print(f"[data-control] unknown command: {command}")
         self._process_events(force=False)
 
     def prepare(self) -> None:
@@ -200,6 +199,7 @@ class DataCollectionCommandProvider(CommandProvider):
         self._dataset_features = self._build_dataset_features(self._spec_robot)
         self._dataset = self._init_dataset(self._dataset_features)
         self._episodes_recorded = self._dataset.num_episodes
+        logger.info("[data] dataset initialized with %d existing episodes", self._episodes_recorded)
 
         self._ensure_video_manager()
         if self._display_data:
@@ -251,6 +251,7 @@ class DataCollectionCommandProvider(CommandProvider):
                 logger.debug("[data] remote teleop shutdown encountered: %s", exc)
             self._remote_provider = None
         self._spec_robot = None
+        logger.debug("[data] shutdown cleanup completed")
         self._dataset = None
         self._dataset_features = None
         self._video_manager = None
@@ -268,8 +269,6 @@ class DataCollectionCommandProvider(CommandProvider):
         logger.debug(
             "[data] compute_command state=%s record=%s buffer=%s", self._state, self._recording_enabled, buffer_size
         )
-        if buffer_size % 100 == 0:
-            print(f"[data] state={self._state} record={self._recording_enabled} buffer={buffer_size}")
         if self._remote_provider is not None:
             action_msg = self._remote_provider.compute_command(observation)
             raw_action = dict(action_msg.actions)
@@ -282,10 +281,7 @@ class DataCollectionCommandProvider(CommandProvider):
             teleop_action = self._teleop_action_processor((raw_action, robot_obs))
         if not isinstance(teleop_action, dict):
             teleop_action = dict(teleop_action)
-        keys = list(teleop_action.keys())
-        logger.debug("[data] teleop action keys: %s", keys)
-        if buffer_size % 100 == 0:
-            print(f"[data] teleop action keys: {keys}")
+        logger.debug("[data] teleop action keys: %s", list(teleop_action.keys()))
 
         robot_action = teleop_action
         if self._robot_action_processor:
@@ -294,6 +290,9 @@ class DataCollectionCommandProvider(CommandProvider):
             robot_action = dict(robot_action)
 
         if self._recording_enabled:
+            if self._dataset is None:
+                logger.error("[data] dataset is None during recording!")
+                return ActionMessage(actions=dict(robot_action))
             if self._robot_observation_processor:
                 obs_processed = self._robot_observation_processor(robot_obs)
             else:
@@ -304,11 +303,23 @@ class DataCollectionCommandProvider(CommandProvider):
             observation_frame = build_dataset_frame(features, obs_processed, prefix=OBS_STR)
             action_frame = build_dataset_frame(features, teleop_action, prefix=ACTION)
             frame = {**observation_frame, **action_frame, "task": self._task}
-            self._dataset.add_frame(frame)
-            frame_size = getattr(self._dataset, "episode_buffer", {}).get("size", 0)
-            logger.debug("[data] buffered frame count: %s", frame_size)
-            if frame_size % 100 == 0:
-                print(f"[data] buffered frame count: {frame_size}")
+            
+            # Check if save operation is in progress before adding frame
+            episode_buffer = getattr(self._dataset, "episode_buffer", None)
+            if episode_buffer and "size" in episode_buffer:
+                # Buffer is intact, safe to add frame
+                self._dataset.add_frame(frame)
+                frame_size = episode_buffer.get("size", 0)
+                logger.debug("[data] buffered frame count: %s", frame_size)
+            else:
+                # Save operation is in progress (episode_buffer structure modified)
+                logger.debug("[data] skipping frame addition - save_episode in progress")
+                # Track skip count for debugging
+                if hasattr(self, '_skip_message_count'):
+                    self._skip_message_count += 1
+                else:
+                    self._skip_message_count = 1
+            
             if self._display_data:
                 try:
                     log_rerun_data(observation=obs_processed, action=teleop_action)
@@ -341,17 +352,17 @@ class DataCollectionCommandProvider(CommandProvider):
         camera_count = len(getattr(self._spec_robot, "cameras", {})) if self._spec_robot else 0
         writer_threads = cfg.num_image_writer_threads_per_camera * camera_count
 
-        print(f"[data] _init_dataset: resume={self._config.resume}, camera_count={camera_count}, writer_threads={writer_threads}")
-        print(f"[data] _init_dataset: use_videos={cfg.video}, fps={cfg.fps}, repo_id={cfg.repo_id}")
+        logger.debug("[data] init_dataset: resume=%s, cameras=%d, threads=%d, videos=%s", 
+                    self._config.resume, camera_count, writer_threads, cfg.video)
 
         if self._config.resume:
+            logger.info("[data] resuming existing dataset: %s", cfg.repo_id)
             dataset = LeRobotDataset(
                 cfg.repo_id,
                 root=root,
                 batch_encoding_size=cfg.video_encoding_batch_size,
             )
             if cfg.num_image_writer_processes or writer_threads:
-                print(f"[data] starting image writer for resumed dataset (processes={cfg.num_image_writer_processes}, threads={writer_threads})")
                 dataset.start_image_writer(cfg.num_image_writer_processes, writer_threads)
             try:
                 if self._spec_robot:
@@ -359,8 +370,8 @@ class DataCollectionCommandProvider(CommandProvider):
             except Exception as exc:
                 raise ValueError(f"Existing dataset metadata incompatible with current robot: {exc}") from exc
         else:
+            logger.info("[data] creating new dataset: %s", cfg.repo_id)
             sanity_check_dataset_name(cfg.repo_id, None)
-            print(f"[data] creating new dataset (processes={cfg.num_image_writer_processes}, threads={writer_threads})")
             dataset = LeRobotDataset.create(
                 repo_id=cfg.repo_id,
                 fps=cfg.fps,
@@ -373,19 +384,14 @@ class DataCollectionCommandProvider(CommandProvider):
                 batch_encoding_size=cfg.video_encoding_batch_size,
             )
         
-        # Debug: Print dataset configuration
-        print(f"[data] dataset created/loaded:")
-        print(f"[data]   - root: {dataset.root}")
-        print(f"[data]   - use_videos: {dataset.use_videos}")
-        print(f"[data]   - num_episodes: {dataset.num_episodes}")
-        print(f"[data]   - image_writer: {getattr(dataset, 'image_writer', None)}")
-        print(f"[data]   - video_backend: {getattr(dataset, 'video_backend', None)}")
+        logger.debug("[data] dataset configured: root=%s, episodes=%d, videos=%s", 
+                    dataset.root, dataset.num_episodes, getattr(dataset, 'use_videos', False))
         
         return dataset
 
     def _begin_recording(self, now: float, *, fresh: bool = False) -> None:
-        print(f"[data] _begin_recording called (fresh={fresh})")
         self._ensure_video_manager()
+        
         self._state = "record"
         self._recording_enabled = True
         self._state_deadline = now + self._episode_seconds
@@ -393,7 +399,7 @@ class DataCollectionCommandProvider(CommandProvider):
         target = self._target_episodes or "?"
         prefix = "Starting" if fresh else "Resuming"
         logger.info("[data] %s recording for episode %s/%s (%.1fs)", prefix, current, target, self._episode_seconds)
-        print(f"[data-state] begin_recording episode={current}/{target}")
+        
         if self._dataset is not None:
             log_say(f"Recording episode {self._dataset.num_episodes}", self._play_sounds)
 
@@ -402,7 +408,6 @@ class DataCollectionCommandProvider(CommandProvider):
         self._recording_enabled = False
         self._state_deadline = now + self._reset_seconds
         logger.info("[data] reset window for %.1f seconds", self._reset_seconds)
-        print(f"[data-state] enter_reset duration={self._reset_seconds}s")
         log_say("Reset the environment", self._play_sounds)
 
     def _mark_complete(self) -> None:
@@ -417,7 +422,7 @@ class DataCollectionCommandProvider(CommandProvider):
             )
             self._complete_logged = True
         log_say("Stop recording", self._play_sounds, blocking=True)
-        print("[data-state] recording complete")
+        logger.info("[data] recording complete: %d/%d episodes", self._episodes_recorded, self._target_episodes or self._episodes_recorded)
         self._close_video_manager()
         if self._events:
             self._events["exit_early"] = False
@@ -427,41 +432,30 @@ class DataCollectionCommandProvider(CommandProvider):
             self._events["continue_after_reset"] = False
 
     def _finalize_episode(self) -> None:
-        if not self._dataset:
-            print("[data] _finalize_episode: no dataset")
+        if self._dataset is None:
+            logger.warning("[data] _finalize_episode: dataset is None")
             return
-        print("[data] _finalize_episode invoked")
         
-        # Debug: Check episode buffer status
-        print(f"[data] episode_buffer exists: {hasattr(self._dataset, 'episode_buffer')}")
+        episode_buffer = getattr(self._dataset, "episode_buffer", None)
+        if not episode_buffer:
+            logger.warning("[data] no episode_buffer found")
+            return
+            
+        size = episode_buffer.get("size", 0)
+        if not size:
+            logger.debug("[data] no frames to finalize, skipping save")
+            return
         
-        if getattr(self._dataset, "episode_buffer", None):
-            size = self._dataset.episode_buffer.get("size", 0)
-            print(f"[data] episode_buffer.size = {size}")
-            if not size:
-                logger.debug("[data] no frames to finalize, skipping save")
-                print("[data] finalize skipped; no frames")
-                return
-            else:
-                logger.info("[data] finalizing episode with %s frames", size)
-                print(f"[data] finalizing episode with {size} frames")
-        else:
-            print("[data] WARNING: no episode_buffer attribute found!")
+        logger.info("[data] finalizing episode with %s frames", size)
         
-        print("[data] calling dataset.save_episode()...")
         try:
             self._dataset.save_episode()
-            print("[data] save_episode() completed successfully")
+            self._episodes_recorded = self._dataset.num_episodes
+            logger.info("[data] saved episode %s", self._episodes_recorded)
+            
         except Exception as exc:
-            print(f"[data] ERROR in save_episode(): {exc}")
             logger.error("[data] save_episode failed: %s", exc, exc_info=True)
             raise
-        
-        self._episodes_recorded = self._dataset.num_episodes
-        logger.info("[data] saved episode %s", self._episodes_recorded)
-        print(f"[data] saved episode {self._episodes_recorded}")
-        logger.debug("[data] dataset stored at %s", self._dataset.root)
-        print(f"[data] dataset root: {self._dataset.root}")
 
     def _finalize_partial_episode(self) -> None:
         if not (self._dataset and self._recording_enabled):
@@ -478,7 +472,7 @@ class DataCollectionCommandProvider(CommandProvider):
                 logger.warning("[data] failed to save partial episode: %s", exc)
 
     def _process_events(self, force: bool = False) -> None:
-        print(f"[data] processing events force={force}")
+        logger.debug("[data] processing events force=%s", force)
         self._update_state(time.perf_counter(), force=force)
 
     def _clear_events(self) -> None:
@@ -496,11 +490,11 @@ class DataCollectionCommandProvider(CommandProvider):
         )
         active = {k: v for k, v in events.items() if v}
         if active or force:
-            print(f"[data-state] state={self._state} force={force} events={active} deadline={self._state_deadline}")
+            logger.debug("[data-state] state=%s force=%s events=%s", self._state, force, active)
 
         if events.get("stop_recording") and self._state != "complete":
             if self._state in {"record", "reset"}:
-                print("[data] stop requested; finalizing current episode if needed")
+                logger.info("[data] stop requested; finalizing current episode")
                 self._finalize_episode()
             events["stop_recording"] = False
             events["exit_early"] = False
@@ -528,7 +522,7 @@ class DataCollectionCommandProvider(CommandProvider):
             events["continue_after_reset"] = False
             events["reset_requested"] = False
             if self._state == "reset":
-                print("[data-state] continue_after_reset -> begin_recording")
+                logger.debug("[data-state] continue_after_reset -> begin_recording")
                 self._begin_recording(now)
                 return
 
