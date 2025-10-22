@@ -72,36 +72,58 @@ class DataCollectionCommandProvider(CommandProvider):
 
     def handle_control_command(self, command: str) -> None:
         command = command.strip().lower()
-        events = self._events
-        force_process = command in {"stop", "end", "finish"}
+        now = time.perf_counter()
         if command in {"stop", "end", "finish"}:
-            events["stop_recording"] = True
             logger.info("[data-control] stop command acknowledged")
             print("[data-control] stop command acknowledged")
-        elif command in {"next", "skip"}:
-            events["exit_early"] = True
+            if self._state == "record":
+                self._finalize_episode()
+            self._clear_events()
+            self._mark_complete()
+            return
+        if command in {"next", "skip"}:
             logger.info("[data-control] advance command acknowledged")
             print("[data-control] advance command acknowledged")
-        elif command in {"rerecord", "redo"}:
-            events["rerecord_episode"] = True
-            events["exit_early"] = True
-            logger.info("[data-control] rerecord command acknowledged")
-            print("[data-control] rerecord command acknowledged")
-        elif command in {"reset"}:
-            events["reset_requested"] = True
+            if self._state == "record":
+                self._finalize_episode()
+            self._clear_events()
+            self._enter_reset(now)
+            return
+        if command == "reset":
             logger.info("[data-control] reset command acknowledged")
             print("[data-control] reset command acknowledged")
-        elif command in {"resume", "next_stage"}:
-            events["continue_after_reset"] = True
+            if self._state == "record":
+                self._finalize_episode()
+            self._clear_events()
+            self._enter_reset(now)
+            return
+        if command in {"resume", "next_stage"}:
             logger.info("[data-control] continue command acknowledged")
             print("[data-control] continue command acknowledged")
-        elif command == "start":
+            if self._state == "reset":
+                self._clear_events()
+                self._begin_recording(now)
+            else:
+                print("[data-control] resume ignored (not in reset)")
+            return
+        if command in {"rerecord", "redo"}:
+            logger.info("[data-control] rerecord command acknowledged")
+            print("[data-control] rerecord command acknowledged")
+            if self._dataset is not None:
+                self._dataset.clear_episode_buffer()
+            self._clear_events()
+            self._begin_recording(now, fresh=True)
+            return
+        if command == "start":
             logger.info("[data-control] start command acknowledged")
             print("[data-control] start command acknowledged")
-        else:
-            logger.warning("[data-control] unknown command: %s", command)
-            print(f"[data-control] unknown command: {command}")
-        self._process_events(force=force_process)
+            self._clear_events()
+            self._begin_recording(now, fresh=True)
+            return
+
+        logger.warning("[data-control] unknown command: %s", command)
+        print(f"[data-control] unknown command: {command}")
+        self._process_events(force=False)
 
     def prepare(self) -> None:
         register_third_party_devices()
@@ -350,7 +372,6 @@ class DataCollectionCommandProvider(CommandProvider):
             self._events["stop_recording"] = False
             self._events["reset_requested"] = False
             self._events["continue_after_reset"] = False
-            self._events["continue_after_reset"] = False
 
     def _finalize_episode(self) -> None:
         if not self._dataset:
@@ -387,6 +408,10 @@ class DataCollectionCommandProvider(CommandProvider):
     def _process_events(self, force: bool = False) -> None:
         print(f"[data] processing events force={force}")
         self._update_state(time.perf_counter(), force=force)
+
+    def _clear_events(self) -> None:
+        for key in self._events:
+            self._events[key] = False
 
     def _update_state(self, now: float, force: bool = False) -> None:
         events = self._events or {}
