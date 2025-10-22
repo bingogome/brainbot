@@ -72,32 +72,45 @@ class DataCollectionCommandProvider(CommandProvider):
 
     def _ensure_video_manager(self) -> None:
         if self._dataset is None:
+            print("[data] _ensure_video_manager: no dataset, skipping")
             return
         if not self._video_context_active or self._video_manager is None:
+            print(f"[data] starting VideoEncodingManager (use_videos={self._dataset.use_videos})")
             self._video_manager = VideoEncodingManager(self._dataset)
             try:
                 self._video_manager.__enter__()
+                print("[data] VideoEncodingManager started successfully")
             except Exception as exc:  # pragma: no cover - defensive
                 self._video_manager = None
                 self._video_context_active = False
                 logger.warning("[data] failed to start video encoding manager: %s", exc)
+                print(f"[data] WARNING: failed to start video encoding manager: {exc}")
             else:
                 self._video_context_active = True
+        else:
+            print("[data] VideoEncodingManager already active")
 
     def _close_video_manager(self) -> None:
+        print(f"[data] _close_video_manager called (active={self._video_context_active})")
         if self._video_manager and self._video_context_active:
             try:
+                print("[data] finalizing VideoEncodingManager...")
                 self._video_manager.__exit__(None, None, None)
+                print("[data] VideoEncodingManager finalized successfully")
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("[data] failed to finalise video encoding: %s", exc)
+                print(f"[data] WARNING: failed to finalise video encoding: {exc}")
             finally:
                 self._video_manager = None
                 self._video_context_active = False
         elif self._dataset is not None:
             try:
+                print("[data] calling dataset.finalize()...")
                 self._dataset.finalize()
+                print("[data] dataset.finalize() completed")
             except Exception as exc:  # pragma: no cover - defensive
                 logger.debug("[data] dataset finalise encountered: %s", exc)
+                print(f"[data] dataset.finalize() encountered: {exc}")
             self._video_context_active = False
 
     def handle_control_command(self, command: str) -> None:
@@ -328,6 +341,9 @@ class DataCollectionCommandProvider(CommandProvider):
         camera_count = len(getattr(self._spec_robot, "cameras", {})) if self._spec_robot else 0
         writer_threads = cfg.num_image_writer_threads_per_camera * camera_count
 
+        print(f"[data] _init_dataset: resume={self._config.resume}, camera_count={camera_count}, writer_threads={writer_threads}")
+        print(f"[data] _init_dataset: use_videos={cfg.video}, fps={cfg.fps}, repo_id={cfg.repo_id}")
+
         if self._config.resume:
             dataset = LeRobotDataset(
                 cfg.repo_id,
@@ -335,6 +351,7 @@ class DataCollectionCommandProvider(CommandProvider):
                 batch_encoding_size=cfg.video_encoding_batch_size,
             )
             if cfg.num_image_writer_processes or writer_threads:
+                print(f"[data] starting image writer for resumed dataset (processes={cfg.num_image_writer_processes}, threads={writer_threads})")
                 dataset.start_image_writer(cfg.num_image_writer_processes, writer_threads)
             try:
                 if self._spec_robot:
@@ -343,6 +360,7 @@ class DataCollectionCommandProvider(CommandProvider):
                 raise ValueError(f"Existing dataset metadata incompatible with current robot: {exc}") from exc
         else:
             sanity_check_dataset_name(cfg.repo_id, None)
+            print(f"[data] creating new dataset (processes={cfg.num_image_writer_processes}, threads={writer_threads})")
             dataset = LeRobotDataset.create(
                 repo_id=cfg.repo_id,
                 fps=cfg.fps,
@@ -354,9 +372,19 @@ class DataCollectionCommandProvider(CommandProvider):
                 image_writer_threads=writer_threads,
                 batch_encoding_size=cfg.video_encoding_batch_size,
             )
+        
+        # Debug: Print dataset configuration
+        print(f"[data] dataset created/loaded:")
+        print(f"[data]   - root: {dataset.root}")
+        print(f"[data]   - use_videos: {dataset.use_videos}")
+        print(f"[data]   - num_episodes: {dataset.num_episodes}")
+        print(f"[data]   - image_writer: {getattr(dataset, 'image_writer', None)}")
+        print(f"[data]   - video_backend: {getattr(dataset, 'video_backend', None)}")
+        
         return dataset
 
     def _begin_recording(self, now: float, *, fresh: bool = False) -> None:
+        print(f"[data] _begin_recording called (fresh={fresh})")
         self._ensure_video_manager()
         self._state = "record"
         self._recording_enabled = True
@@ -400,10 +428,16 @@ class DataCollectionCommandProvider(CommandProvider):
 
     def _finalize_episode(self) -> None:
         if not self._dataset:
+            print("[data] _finalize_episode: no dataset")
             return
         print("[data] _finalize_episode invoked")
+        
+        # Debug: Check episode buffer status
+        print(f"[data] episode_buffer exists: {hasattr(self._dataset, 'episode_buffer')}")
+        
         if getattr(self._dataset, "episode_buffer", None):
             size = self._dataset.episode_buffer.get("size", 0)
+            print(f"[data] episode_buffer.size = {size}")
             if not size:
                 logger.debug("[data] no frames to finalize, skipping save")
                 print("[data] finalize skipped; no frames")
@@ -411,7 +445,18 @@ class DataCollectionCommandProvider(CommandProvider):
             else:
                 logger.info("[data] finalizing episode with %s frames", size)
                 print(f"[data] finalizing episode with {size} frames")
-        self._dataset.save_episode()
+        else:
+            print("[data] WARNING: no episode_buffer attribute found!")
+        
+        print("[data] calling dataset.save_episode()...")
+        try:
+            self._dataset.save_episode()
+            print("[data] save_episode() completed successfully")
+        except Exception as exc:
+            print(f"[data] ERROR in save_episode(): {exc}")
+            logger.error("[data] save_episode failed: %s", exc, exc_info=True)
+            raise
+        
         self._episodes_recorded = self._dataset.num_episodes
         logger.info("[data] saved episode %s", self._episodes_recorded)
         print(f"[data] saved episode {self._episodes_recorded}")
