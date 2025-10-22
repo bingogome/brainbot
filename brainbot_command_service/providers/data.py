@@ -74,21 +74,22 @@ class DataCollectionCommandProvider(CommandProvider):
         events = self._events
         if command in {"stop", "end", "finish"}:
             events["stop_recording"] = True
-            logger.info("[data] stop command acknowledged")
+            logger.info("[data-control] stop command acknowledged")
         elif command in {"next", "skip"}:
             events["exit_early"] = True
-            logger.info("[data] advance command acknowledged")
+            logger.info("[data-control] advance command acknowledged")
         elif command in {"rerecord", "redo"}:
             events["rerecord_episode"] = True
             events["exit_early"] = True
-            logger.info("[data] rerecord command acknowledged")
+            logger.info("[data-control] rerecord command acknowledged")
         elif command in {"reset"}:
             events["reset_requested"] = True
-            logger.info("[data] reset command acknowledged")
+            logger.info("[data-control] reset command acknowledged")
         elif command in {"start", "resume"}:
-            logger.info("[data] start/resume command acknowledged")
+            logger.info("[data-control] start/resume command acknowledged")
         else:
-            logger.warning("[data] unknown control command: %s", command)
+            logger.warning("[data-control] unknown command: %s", command)
+        self._process_events(force=True)
 
     def prepare(self) -> None:
         register_third_party_devices()
@@ -193,6 +194,10 @@ class DataCollectionCommandProvider(CommandProvider):
             raise RuntimeError("Data mode provider is not prepared")
 
         robot_obs = observation.payload.get("robot", {})
+        buffer_size = getattr(self._dataset, "episode_buffer", {}).get("size", 0)
+        logger.debug(
+            "[data] compute_command state=%s record=%s buffer=%s", self._state, self._recording_enabled, buffer_size
+        )
         if self._remote_provider is not None:
             action_msg = self._remote_provider.compute_command(observation)
             raw_action = dict(action_msg.actions)
@@ -205,6 +210,7 @@ class DataCollectionCommandProvider(CommandProvider):
             teleop_action = self._teleop_action_processor((raw_action, robot_obs))
         if not isinstance(teleop_action, dict):
             teleop_action = dict(teleop_action)
+        logger.debug("[data] teleop action keys: %s", list(teleop_action.keys()))
 
         robot_action = teleop_action
         if self._robot_action_processor:
@@ -224,6 +230,8 @@ class DataCollectionCommandProvider(CommandProvider):
             action_frame = build_dataset_frame(features, teleop_action, prefix=ACTION)
             frame = {**observation_frame, **action_frame, "task": self._task}
             self._dataset.add_frame(frame)
+            frame_size = getattr(self._dataset, "episode_buffer", {}).get("size", 0)
+            logger.debug("[data] buffered frame count: %s", frame_size)
             if self._display_data:
                 try:
                     log_rerun_data(observation=obs_processed, action=teleop_action)
@@ -326,7 +334,10 @@ class DataCollectionCommandProvider(CommandProvider):
         if getattr(self._dataset, "episode_buffer", None):
             size = self._dataset.episode_buffer.get("size", 0)
             if not size:
+                logger.debug("[data] no frames to finalize, skipping save")
                 return
+            else:
+                logger.info("[data] finalizing episode with %s frames", size)
         self._dataset.save_episode()
         self._episodes_recorded = self._dataset.num_episodes
         logger.info("[data] saved episode %s", self._episodes_recorded)
@@ -345,8 +356,18 @@ class DataCollectionCommandProvider(CommandProvider):
             except Exception as exc:
                 logger.warning("[data] failed to save partial episode: %s", exc)
 
-    def _update_state(self, now: float) -> None:
+    def _process_events(self, force: bool = False) -> None:
+        self._update_state(time.perf_counter(), force=force)
+
+    def _update_state(self, now: float, force: bool = False) -> None:
         events = self._events or {}
+        logger.debug(
+            "[data-state] state=%s force=%s events=%s deadline=%s",
+            self._state,
+            force,
+            {k: v for k, v in events.items() if v},
+            self._state_deadline,
+        )
 
         if events.get("stop_recording") and self._state != "complete":
             events["stop_recording"] = False
@@ -372,7 +393,7 @@ class DataCollectionCommandProvider(CommandProvider):
 
         if self._state == "record":
             deadline_reached = self._state_deadline is not None and now >= self._state_deadline
-            exit_requested = events.get("exit_early", False)
+            exit_requested = events.get("exit_early", False) or force
             if deadline_reached or exit_requested:
                 self._finalize_episode()
                 if events.get("rerecord_episode"):
@@ -398,7 +419,7 @@ class DataCollectionCommandProvider(CommandProvider):
                     self._begin_recording(now)
         elif self._state == "reset":
             deadline_reached = self._state_deadline is not None and now >= self._state_deadline
-            exit_requested = events.get("exit_early", False) or events.get("stop_recording", False)
+            exit_requested = events.get("exit_early", False) or events.get("stop_recording", False) or force
             if deadline_reached or exit_requested:
                 events["exit_early"] = False
                 if events.get("stop_recording"):
