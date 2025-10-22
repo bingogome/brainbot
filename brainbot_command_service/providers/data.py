@@ -63,6 +63,7 @@ class DataCollectionCommandProvider(CommandProvider):
             "rerecord_episode": False,
             "stop_recording": False,
             "reset_requested": False,
+            "continue_after_reset": False,
         }
         self._play_sounds = bool(config.play_sounds)
 
@@ -208,7 +209,8 @@ class DataCollectionCommandProvider(CommandProvider):
         logger.debug(
             "[data] compute_command state=%s record=%s buffer=%s", self._state, self._recording_enabled, buffer_size
         )
-        print(f"[data] state={self._state} record={self._recording_enabled} buffer={buffer_size}")
+        if buffer_size % 50 == 0:
+            print(f"[data] state={self._state} record={self._recording_enabled} buffer={buffer_size}")
         if self._remote_provider is not None:
             action_msg = self._remote_provider.compute_command(observation)
             raw_action = dict(action_msg.actions)
@@ -223,7 +225,8 @@ class DataCollectionCommandProvider(CommandProvider):
             teleop_action = dict(teleop_action)
         keys = list(teleop_action.keys())
         logger.debug("[data] teleop action keys: %s", keys)
-        print(f"[data] teleop action keys: {keys}")
+        if buffer_size % 50 == 0:
+            print(f"[data] teleop action keys: {keys}")
 
         robot_action = teleop_action
         if self._robot_action_processor:
@@ -245,7 +248,8 @@ class DataCollectionCommandProvider(CommandProvider):
             self._dataset.add_frame(frame)
             frame_size = getattr(self._dataset, "episode_buffer", {}).get("size", 0)
             logger.debug("[data] buffered frame count: %s", frame_size)
-            print(f"[data] buffered frame count: {frame_size}")
+            if frame_size % 50 == 0:
+                print(f"[data] buffered frame count: {frame_size}")
             if self._display_data:
                 try:
                     log_rerun_data(observation=obs_processed, action=teleop_action)
@@ -314,6 +318,7 @@ class DataCollectionCommandProvider(CommandProvider):
         target = self._target_episodes or "?"
         prefix = "Starting" if fresh else "Resuming"
         logger.info("[data] %s recording for episode %s/%s (%.1fs)", prefix, current, target, self._episode_seconds)
+        print(f"[data-state] begin_recording episode={current}/{target}")
         if self._dataset is not None:
             log_say(f"Recording episode {self._dataset.num_episodes}", self._play_sounds)
 
@@ -322,6 +327,7 @@ class DataCollectionCommandProvider(CommandProvider):
         self._recording_enabled = False
         self._state_deadline = now + self._reset_seconds
         logger.info("[data] reset window for %.1f seconds", self._reset_seconds)
+        print(f"[data-state] enter_reset duration={self._reset_seconds}s")
         log_say("Reset the environment", self._play_sounds)
 
     def _mark_complete(self) -> None:
@@ -336,11 +342,13 @@ class DataCollectionCommandProvider(CommandProvider):
             )
             self._complete_logged = True
         log_say("Stop recording", self._play_sounds, blocking=True)
+        print("[data-state] recording complete")
         if self._events:
             self._events["exit_early"] = False
             self._events["rerecord_episode"] = False
             self._events["stop_recording"] = False
             self._events["reset_requested"] = False
+            self._events["continue_after_reset"] = False
 
     def _finalize_episode(self) -> None:
         if not self._dataset:
