@@ -9,7 +9,10 @@ robot:
     port: /dev/ttyACM2
     wheel_radius_m: 0.05
     base_radius_m: 0.125
-  mount: {}
+  mount:
+    port: /dev/ttyACM3
+    pan_motor_id: 0
+    tilt_motor_id: 1
   cameras:
     left:
       type: opencv
