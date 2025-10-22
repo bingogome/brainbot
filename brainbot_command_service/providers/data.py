@@ -402,6 +402,9 @@ class DataCollectionCommandProvider(CommandProvider):
             print(f"[data-state] state={self._state} force={force} events={active} deadline={self._state_deadline}")
 
         if events.get("stop_recording") and self._state != "complete":
+            if self._state in {"record", "reset"}:
+                print("[data] stop requested; finalizing current episode if needed")
+                self._finalize_episode()
             events["stop_recording"] = False
             events["exit_early"] = False
             events["rerecord_episode"] = False
