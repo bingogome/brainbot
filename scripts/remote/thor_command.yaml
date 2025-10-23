@@ -90,13 +90,13 @@ camera_stream:
   sources:
     - name: left
       path: robot.cameras.left
-      fps: 15
+      fps: 10
     - name: right
       path: robot.cameras.right
-      fps: 15
+      fps: 10
     - name: top
       path: robot.cameras.top
-      fps: 15
+      fps: 10
 data:
   config_path: thor_data.yaml
 default_mode: idle
