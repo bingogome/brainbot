@@ -271,12 +271,12 @@ _DASHBOARD_HTML = """
     body { font-family: sans-serif; margin: 2rem; }
     pre { background: #f5f5f5; padding: 1rem; border-radius: 6px; }
     #chart-container { width: 100%; max-width: 960px; margin-bottom: 2rem; }
+    #chart-container canvas { width: 100%; height: 320px; display: block; }
     .image-grid { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 2rem; }
     .image-grid figure { margin: 0; }
     .image-grid img { max-width: 320px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
     .image-grid figcaption { text-align: center; margin-top: 0.5rem; font-size: 0.9rem; }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <h1>Brainbot Command/Observation Feed</h1>
@@ -287,7 +287,7 @@ _DASHBOARD_HTML = """
   <h2>Action</h2>
   <pre id="act"></pre>
   <div id="chart-container">
-    <canvas id="actionChart"></canvas>
+    <canvas id="actionChart" width="960" height="320"></canvas>
   </div>
   <h2>Camera Previews</h2>
   <div class="image-grid" id="images"></div>
@@ -298,12 +298,23 @@ _DASHBOARD_HTML = """
       '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000',
       '#aaffc3', '#808000', '#ffd8b1', '#000075', '#808080'
     ];
-    let actionChart = null;
     let chartKeys = [];
+    let latestHistory = [];
+
+    function asNumeric(value) {
+      if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : null;
+      }
+      if (typeof value === 'string' && value.trim() !== '') {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+      return null;
+    }
 
     async function refresh() {
       try {
-        const res = await fetch('/data');
+        const res = await fetch('/data', { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
         document.getElementById('mode').textContent = data.mode || 'unknown';
@@ -337,42 +348,157 @@ _DASHBOARD_HTML = """
     }
 
     function updateChart(history) {
-      const labels = history.map(item => new Date(item.timestamp * 1000).toLocaleTimeString());
-      const keys = Array.from(new Set(history.flatMap(item => Object.keys(item.values || {}))));
+      latestHistory = Array.isArray(history) ? history : [];
+      const canvas = document.getElementById('actionChart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-      if (!actionChart || JSON.stringify(keys) !== JSON.stringify(chartKeys)) {
-        const datasets = keys.map((key, idx) => ({
-          label: key,
-          data: history.map(item => (item.values && key in item.values ? item.values[key] : null)),
-          borderColor: colors[idx % colors.length],
-          tension: 0.2,
-          spanGaps: true,
-          fill: false,
-        }));
-        const ctx = document.getElementById('actionChart').getContext('2d');
-        if (actionChart) actionChart.destroy();
-        actionChart = new Chart(ctx, {
-          type: 'line',
-          data: { labels, datasets },
-          options: {
-            responsive: true,
-            scales: {
-              x: { display: true, title: { display: true, text: 'Time' } },
-              y: { display: true, title: { display: true, text: 'Value' } },
-            },
-            interaction: { mode: 'index', intersect: false },
-          },
-        });
-        chartKeys = keys;
-      } else {
-        actionChart.data.labels = labels;
-        actionChart.data.datasets.forEach((dataset, idx) => {
-          const key = chartKeys[idx];
-          dataset.data = history.map(item => (item.values && key in item.values ? item.values[key] : null));
-        });
-        actionChart.update();
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(canvas.clientWidth || canvas.width, 200);
+      const height = Math.max(canvas.clientHeight || canvas.height, 200);
+      const pixelWidth = Math.round(width * dpr);
+      const pixelHeight = Math.round(height * dpr);
+
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
       }
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      const keys = Array.from(new Set(latestHistory.flatMap(item => Object.keys(item.values || {}))));
+      chartKeys = keys;
+
+      if (!keys.length || !latestHistory.length) {
+        ctx.fillStyle = '#666';
+        ctx.font = '14px sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        ctx.fillText('No action data yet', width / 2, height / 2);
+        return;
+      }
+
+      let yMin = Infinity;
+      let yMax = -Infinity;
+      latestHistory.forEach(item => {
+        keys.forEach(key => {
+          const raw = item.values ? item.values[key] : undefined;
+          const value = asNumeric(raw);
+          if (value === null) return;
+          if (value < yMin) yMin = value;
+          if (value > yMax) yMax = value;
+        });
+      });
+
+      if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) {
+        ctx.fillStyle = '#666';
+        ctx.font = '14px sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        ctx.fillText('No numeric action data to display', width / 2, height / 2);
+        return;
+      }
+
+      if (yMin === yMax) {
+        const delta = Math.abs(yMin) || 1;
+        yMin -= delta * 0.5;
+        yMax += delta * 0.5;
+      }
+
+      const top = 36;
+      const left = 60;
+      const right = 20;
+      const bottom = 48;
+      const plotWidth = Math.max(width - left - right, 10);
+      const plotHeight = Math.max(height - top - bottom, 10);
+
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(left, top);
+      ctx.lineTo(left, top + plotHeight);
+      ctx.lineTo(left + plotWidth, top + plotHeight);
+      ctx.stroke();
+
+      ctx.font = '12px sans-serif';
+      ctx.fillStyle = '#666';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'right';
+      const yTicks = 4;
+      for (let i = 0; i <= yTicks; i += 1) {
+        const value = yMin + ((yMax - yMin) * i) / yTicks;
+        const y = top + plotHeight - ((value - yMin) / (yMax - yMin)) * plotHeight;
+        ctx.strokeStyle = i === 0 ? '#444' : '#ddd';
+        ctx.beginPath();
+        ctx.moveTo(left, y);
+        ctx.lineTo(left + plotWidth, y);
+        ctx.stroke();
+        ctx.fillText(value.toFixed(2), left - 8, y);
+      }
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const labelCount = Math.min(5, latestHistory.length);
+      const maxIndex = latestHistory.length - 1;
+      if (maxIndex >= 0) {
+        const step = labelCount > 1 ? Math.max(1, Math.floor(maxIndex / (labelCount - 1))) : 1;
+        for (let idx = 0; idx <= maxIndex; idx += step) {
+          const x = left + (maxIndex === 0 ? 0 : (idx / maxIndex) * plotWidth);
+          const ts = new Date(latestHistory[idx].timestamp * 1000);
+          ctx.fillText(ts.toLocaleTimeString(), x, top + plotHeight + 6);
+        }
+        if ((maxIndex % (step || 1)) !== 0) {
+          const x = left + plotWidth;
+          const ts = new Date(latestHistory[maxIndex].timestamp * 1000);
+          ctx.fillText(ts.toLocaleTimeString(), x, top + plotHeight + 6);
+        }
+      }
+
+      keys.forEach((key, datasetIdx) => {
+        ctx.strokeStyle = colors[datasetIdx % colors.length];
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        let drawing = false;
+        latestHistory.forEach((item, pointIdx) => {
+          const raw = item.values ? item.values[key] : undefined;
+          const value = asNumeric(raw);
+          if (value === null) {
+            drawing = false;
+            return;
+          }
+          const x = left + (maxIndex === 0 ? 0 : (pointIdx / maxIndex) * plotWidth);
+          const y = top + plotHeight - ((value - yMin) / (yMax - yMin)) * plotHeight;
+          if (!drawing) {
+            ctx.moveTo(x, y);
+            drawing = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        });
+        ctx.stroke();
+      });
+
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      let legendX = left;
+      const legendY = top - 18;
+      keys.forEach((key, idx) => {
+        const color = colors[idx % colors.length];
+        ctx.fillStyle = color;
+        ctx.fillRect(legendX, legendY, 16, 4);
+        ctx.fillStyle = '#333';
+        ctx.fillText(key, legendX + 20, legendY + 2);
+        legendX += ctx.measureText(key).width + 56;
+      });
     }
+
+    window.addEventListener('resize', () => {
+      if (latestHistory.length) {
+        updateChart(latestHistory);
+      }
+    });
 
     refresh();
     setInterval(refresh, 100);
