@@ -47,7 +47,7 @@ Command Providers -> Hub:                   |    Command Consumers:
 
 ## Typical Workflow
 
-Brainbot operates with two machines (or on the same machine if you wish):
+Brainbot operates with two machines (**or on the same machine if you wish**):
 
 - **remote_host** – runs the command service, robot controller, and optional policy server (typically the edge computer on the robot).
 - **hub_host** – launches teleoperation and data-collection servers on demand.
