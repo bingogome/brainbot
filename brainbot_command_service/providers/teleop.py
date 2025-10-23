@@ -7,7 +7,7 @@ from typing import Any, Callable
 from brainbot_core.transport import BaseZMQClient
 from brainbot_core.proto import ActionMessage, MessageSerializer, ObservationMessage
 from brainbot_core.config import RemoteTeleopManagerConfig
-from brainbot_pc_manager import PCServiceManagerClient
+from brainbot_service_manager import ServiceManagerClient
 
 from .base import CommandProvider, numeric_only
 
@@ -73,7 +73,7 @@ class RemoteTeleopCommandProvider(CommandProvider):
         self._client: RemoteTeleopClient | None = None
         self._observation_adapter = observation_adapter or numeric_observation_payload
         self._manager_config = manager_config
-        self._manager_client: PCServiceManagerClient | None = None
+        self._manager_client: ServiceManagerClient | None = None
         self._manager_started: bool = False
 
     def prepare(self) -> None:
@@ -109,7 +109,7 @@ class RemoteTeleopCommandProvider(CommandProvider):
             return
         if self._manager_client is None:
             host = self._manager_config.host or self.host
-            self._manager_client = PCServiceManagerClient(
+            self._manager_client = ServiceManagerClient(
                 host=host,
                 port=self._manager_config.port,
                 timeout_ms=max(

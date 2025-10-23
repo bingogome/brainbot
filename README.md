@@ -1,20 +1,20 @@
 # brainbot
 
-Brainbot is a modular hub-and-spoke control stack for combining teleoperation, AI inference, multi-camera streaming, and lightweight visualization. A typical deployment uses an edge compute device (e.g., a Jetson module, but the codebase is not limited to edge device and should be able to run on any device) to run the follower robot and AI policy, while remote PCs host leader teleop devices or AR controllers.
+Brainbot is a modular hub-and-spoke control stack for combining teleoperation, AI inference, multi-camera streaming, and lightweight visualization. A typical deployment uses a **remote_host** (e.g., a Jetson module mounted on the robot) to run the follower robot and AI policy, while a **hub_host** launches leader teleop devices or AR controllers.
 
 ## Architecture
 
 ```
 Command Providers -> Hub:                   |    Command Consumers:
 ┌───────────────┐     ┌──────────────────┐  |            ┌───────────────────────┐
-│ Teleop Server │◄───►│ Teleop Action    │  |            │ Web Dashboard         │
-│(on PC or Edge)│ ZMQ │ Server(s)        │  |            │ (brainbot_webviz)     │
+│ Teleop Server │◄───►│ Command Service  │  |            │ Web Dashboard         │
+│(on hub_host)  │ ZMQ │ (remote_host)    │  |            │ (brainbot_webviz)     │
 │ run_teleop_…  │     └──────────────────┘  |            └───────────────────────┘
 └───────────────┘                           |                      ▲
                                             |                      │ HTTP
 ┌───────────────────────────────────┐       |                      │
-|  AI Policy Server (on PC or Edge) │       |      ┌───────────────┴─────────────────┐
-└───────────────────────────────────┘       |      │ Command Hub (on Edge)           │
+|  AI Policy Server (remote_host)   │       |      ┌───────────────┴─────────────────┐
+└───────────────────────────────────┘       |      │ Command Service (remote_host)   │
                                             |      │ (brainbot_command_service)      │
                                             |      │ Mode manager + CLI              │
                                             |      │  • Local/remote teleop provider │
@@ -24,7 +24,7 @@ Command Providers -> Hub:                   |    Command Consumers:
                                             |                   │ ZMQ          │
                                             |                   │              │
                                             |      ┌────────────┴──────────────▼──────┐
-                                            |      │ Robot Controller (on Edge)       │
+                                            |      │ Robot Controller (remote_host)   │
                                             |      │ (brainbot_control_service)       │
                                             |      │  • Streams obs/actions           │
                                             |      │  • Drives hardware               |
@@ -37,40 +37,52 @@ Command Providers -> Hub:                   |    Command Consumers:
 | Package                    | Description                                                   |
 |----------------------------|---------------------------------------------------------------|
 | `brainbot_core`            | Config loaders, dynamic module imports, message serialization |
-| `brainbot_command_service` | Edge hub with teleop/AI providers, WebViz bridge              |
+| `brainbot_command_service` | Remote command service orchestrating teleop/AI providers      |
 | `brainbot_control_service` | Robot-side loop interfacing with motors and camera streamer   |
 | `brainbot_mode_dispatcher` | CLI dispatcher (swappable for other event sources)            |
 | `brainbot_teleop_server`   | Exposes local teleop devices or AR controllers via ZMQ        |
 | `brainbot_webviz`          | HTTP dashboard for command history, mode, and camera preview  |
-| `brainbot/scripts`         | Launch helpers for edge host (`thor/`) and PC (`pc/`) roles   |
+| `brainbot/scripts`         | Launch helpers for the remote robot host (`remote/`) and hub host (`hub/`) |
+| `brainbot_service_manager` | Shared ZeroMQ service manager used by hub/remote hosts                  |
 
 ## Typical Workflow
 
-### Edge Computer (e.g., Jetson)
-1. Run the GR00T policy server (defaults use `127.0.0.1:5555`).
-2. Start the command hub (WebViz + GR00T integration are automatic):
-   ```bash
-   python brainbot/scripts/thor/run_thor_command.py \
-       --config brainbot/scripts/thor/thor_command.yaml
-   ```
-3. (Optional) Preview teleop/AI output without powering the robot:
-   ```bash
-   python brainbot/scripts/thor/run_thor_preview.py \
-       --config brainbot/scripts/thor/thor_command.yaml
-   ```
-4. Launch the robot controller when safe:
-   ```bash
-   python brainbot/scripts/thor/run_thor_robot.py \
-       --config brainbot/scripts/thor/thor_robot.yaml \
-       --no-calibrate
-   ```
+Brainbot operates with two machines (or on the same machine if you wish):
 
-### Teleop Servers (Operator PC / AR bridge)
+- **remote_host** – runs the command service, robot controller, and optional policy server (typically the edge computer on the robot).
+- **hub_host** – launches teleoperation and data-collection servers on demand.
+
+### 1. Start the service manager on `hub_host`
 ```bash
-python brainbot/scripts/pc/run_teleop_server.py \
-    --config brainbot/scripts/pc/leader_teleop.yaml
+python scripts/hub/run_all.py
 ```
-(AR controllers are configured similarly using `mode: local`.)
+The manager idles until the robot requests a teleop/data service. Logs report when subprocesses start/stop.
+Edit `brainbot/scripts/hub/hub_manager.yaml` to add or modify the services that can be launched (each entry maps to a teleop or data server configuration).
+
+### 2. Launch Brainbot on `remote_host`
+```bash
+# Full stack (command service + robot controller + optional preview camera bridge)
+export HUB_HOST=<hub_host_ip>
+python scripts/remote/run_all.py
+
+# or start components individually
+export HUB_HOST=<hub_host_ip>
+python scripts/remote/run_thor_command.py --config scripts/remote/thor_command.yaml
+python scripts/remote/run_thor_robot.py --config scripts/remote/thor_robot.yaml --no-calibrate
+```
+
+> All commands are intended to be executed from the repository root (`brainbot` directory) on the respective host.
+
+If any teleop/data server is configured with `host: 127.0.0.1` (e.g., the AR teleop running on `remote_host`), start a service manager locally as well:
+
+```bash
+python scripts/hub/run_all.py  # run on remote_host when local services are required
+```
+
+The service manager itself lives in `brainbot_service_manager/` and exposes a simple ZeroMQ API for starting, stopping, and listing managed services. Both the hub and remote entry points reuse this module, so extending or debugging the lifecycle logic requires changing it in a single place.
+
+### 3. (Optional) Start the policy server
+If you are using GR00T or another inference service, start it on `remote_host` before issuing inference mode requests (default ZMQ endpoint `127.0.0.1:5555`).
 
 ### Mode Control & Visualization
 
@@ -79,37 +91,37 @@ python brainbot/scripts/pc/run_teleop_server.py \
 Launch the services with a UNIX socket dispatcher (examples assume `/tmp/brainbot_modesock`):
 
 ```bash
-python brainbot/scripts/thor/run_all.py --mode-socket /tmp/brainbot_modesock
+python scripts/remote/run_all.py --mode-socket /tmp/brainbot_modesock
 # …or the command service only
-python brainbot/scripts/thor/run_thor_command.py --mode-socket /tmp/brainbot_modesock
+python scripts/remote/run_thor_command.py --mode-socket /tmp/brainbot_modesock
 ```
 
 Send mode changes from another terminal using the helper script:
 
 ```bash
 # Switch teleop provider
-python brainbot/scripts/thor/send_mode_command.py teleop leader
-python brainbot/scripts/thor/send_mode_command.py teleop joycon
-python brainbot/scripts/thor/send_mode_command.py teleop gamepad
-python brainbot/scripts/thor/send_mode_command.py teleop ar
+python scripts/remote/send_mode_command.py teleop leader
+python scripts/remote/send_mode_command.py teleop joycon
+python scripts/remote/send_mode_command.py teleop gamepad
+python scripts/remote/send_mode_command.py teleop ar
 
 # AI instructions
-python brainbot/scripts/thor/send_mode_command.py infer "Pick up the block"
-python brainbot/scripts/thor/send_mode_command.py infer "Open the shelf"
+python scripts/remote/send_mode_command.py infer "Pick up the block"
+python scripts/remote/send_mode_command.py infer "Open the shelf"
 
 # Idle / shutdown
-python brainbot/scripts/thor/send_mode_command.py idle
-python brainbot/scripts/thor/send_mode_command.py shutdown
+python scripts/remote/send_mode_command.py idle
+python scripts/remote/send_mode_command.py shutdown
 
 # Data collection helpers
-python brainbot/scripts/thor/send_mode_command.py data start
-python brainbot/scripts/thor/send_mode_command.py data resume
-python brainbot/scripts/thor/send_mode_command.py data next
-python brainbot/scripts/thor/send_mode_command.py data stop
-python brainbot/scripts/thor/send_mode_command.py data rerecord
+python scripts/remote/send_mode_command.py data start
+python scripts/remote/send_mode_command.py data resume
+python scripts/remote/send_mode_command.py data next
+python scripts/remote/send_mode_command.py data stop
+python scripts/remote/send_mode_command.py data rerecord
 
 # Raw JSON fallback when you need a custom payload
-python brainbot/scripts/thor/send_mode_command.py raw '{"teleop":"leader"}'
+python scripts/remote/send_mode_command.py raw '{"teleop":"leader"}'
 ```
 
 Responses from the command service are printed to stdout (`OK`, errors, or blank on success).
@@ -170,29 +182,38 @@ Add a data recording configuration to your command service YAML.
 
 ## Config Examples
 
-`brainbot/scripts/thor/thor_command.yaml`:
+`brainbot/scripts/remote/thor_command.yaml`:
 ```yaml
 teleops:
   leader:
     mode: remote
-    host: 192.168.22.171
+    host: ${HUB_HOST:-192.168.22.171}
     port: 7001
     timeout_ms: 1000
+    config: ../hub/teleop_server.yaml
   joycon:
     mode: remote
-    host: 192.168.22.171
+    host: ${HUB_HOST:-192.168.22.171}
     port: 7002
     timeout_ms: 1000
+    config: ../hub/joycon.yaml
   gamepad:
     mode: remote
-    host: 192.168.22.171
+    host: ${HUB_HOST:-192.168.22.171}
     port: 7003
     timeout_ms: 1000
+    config: ../hub/gamepad.yaml
+  ar:
+    mode: remote
+    host: 127.0.0.1
+    port: 7004
+    timeout_ms: 1000
+    config: ../hub/ar_teleop.yaml
 ai:
   host: 172.17.0.3
   port: 5555
   timeout_ms: 10000
-  modality_config_path: scripts/thor/xlerobot_modality.json
+  modality_config_path: scripts/remote/xlerobot_modality.json
   camera_keys: [left, right, top]
   state_keys:
     - left_shoulder_pan.pos
@@ -239,7 +260,9 @@ RobotControlService now switches to numeric-only observations when a teleop prov
 
 Adjust the modality path, camera keys, and state keys so they match the GR00T build you deploy (add or remove base/mount keys as needed).
 
-`brainbot/scripts/pc/leader_teleop.yaml`:
+Set the `HUB_HOST` environment variable on `remote_host` to the reachable IP address of your hub host. If unset, the YAML defaults fall back to `192.168.22.171`.
+
+`brainbot/scripts/hub/leader_teleop.yaml`:
 ```yaml
 teleop:
   mode: local
@@ -254,13 +277,17 @@ teleop:
       max_speed_mps: 0.8
       deadzone: 0.15
       yaw_speed_deg: 45
-    mount: {}
+    mount:
+      joystick_index: 0
+      deadzone: 0.15
+      max_pan_speed_dps: 60.0
+      max_tilt_speed_dps: 45.0
 network:
   host: 0.0.0.0
   port: 7001
 ```
 
-`brainbot/scripts/thor/thor_robot.yaml`:
+`brainbot/scripts/remote/thor_robot.yaml`:
 ```yaml
 robot:
   type: xlerobot
@@ -318,4 +345,4 @@ camera_stream:
 - Remote teleops are pinged and keep socket timeouts, preventing the control loop from blocking.
 - Switching out of AI mode clears the last instruction; idle is always available as a safe fallback.
 
-With these pieces, you can teleoperate, stream multiple cameras, run GR00T policies, and monitor everything across edge computers, PCs, and AR controllers—all within Brainbot’s modular stack.
+With these pieces, you can teleoperate, stream multiple cameras, run GR00T policies, and monitor everything across the remote_host, hub_host, and auxiliary AR controllers—all within Brainbot’s modular stack.

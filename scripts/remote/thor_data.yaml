@@ -1,14 +1,14 @@
 # Data collection configuration for XLerobot on Jetson Thor
 robot_config_path: thor_robot.yaml
 teleop_manager_defaults: &teleop_manager_defaults
-  host: 192.168.22.171
+  host: ${HUB_HOST:-192.168.22.171}
   port: 7100
   start_timeout_s: 10.0
   stop_timeout_s: 5.0
 
 teleop:
   mode: remote
-  config: ../pc/data_server.yaml
+  config: ../hub/data_server.yaml
   timeout_ms: 1500
   manager:
     <<: *teleop_manager_defaults

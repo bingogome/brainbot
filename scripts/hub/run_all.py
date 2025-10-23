@@ -8,7 +8,7 @@ from typing import Any, Sequence
 
 import yaml
 
-from brainbot_pc_manager import PCServiceManager, ServiceSpec
+from brainbot_service_manager import ServiceManager, ServiceSpec
 
 
 def _infer_ready_endpoint(command: Sequence[str], base_dir: Path) -> tuple[str | None, int | None]:
@@ -111,7 +111,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path(__file__).with_name("pc_manager.yaml"),
+        default=Path(__file__).with_name("hub_manager.yaml"),
         help="Path to manager YAML configuration",
     )
     args = parser.parse_args(argv)
@@ -121,17 +121,17 @@ def main(argv: list[str] | None = None) -> None:
     port = int(manager_cfg.get("port", 7100))
     api_token = manager_cfg.get("api_token")
 
-    server = PCServiceManager(host=host, port=port, api_token=api_token, services=services)
+    server = ServiceManager(host=host, port=port, api_token=api_token, services=services)
 
     def shutdown_signal(signum, frame):
-        print(f"[pc-manager] received signal {signal.Signals(signum).name}, shutting down")
+        print(f"[hub-manager] received signal {signal.Signals(signum).name}, shutting down")
         server.close()
         sys.exit(0)
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, shutdown_signal)
 
-    print(f"[pc-manager] listening on tcp://{host}:{port} with {len(services)} service(s)")
+    print(f"[hub-manager] listening on tcp://{host}:{port} with {len(services)} service(s)")
     try:
         server.run()
     except KeyboardInterrupt:

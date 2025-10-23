@@ -46,7 +46,7 @@ class RunningService:
         return self.process is not None and self.process.poll() is None
 
 
-class PCServiceManager(BaseZMQServer):
+class ServiceManager(BaseZMQServer):
     """ZeroMQ server that starts/stops teleop/data servers on demand."""
 
     def __init__(
@@ -79,7 +79,7 @@ class PCServiceManager(BaseZMQServer):
                 runner = self._start_service(spec, timeout_override=timeout_s if timeout_s > 0 else None)
                 self._running[service_name] = runner
             else:
-                print(f"[pc-manager] service '{service_name}' already running (pid={runner.process.pid})")
+                print(f"[service-manager] service '{service_name}' already running (pid={runner.process.pid})")
         service_state = self._describe_service(service_name)
         return {"status": "running", "service": service_state}
 
@@ -94,7 +94,7 @@ class PCServiceManager(BaseZMQServer):
         with self._lock:
             runner = self._running.get(service_name)
             if runner is None or not runner.is_running():
-                print(f"[pc-manager] service '{service_name}' already stopped")
+                print(f"[service-manager] service '{service_name}' already stopped")
                 return {"status": "stopped", "service": self._describe_service(service_name)}
             self._stop_service(runner, timeout_override=timeout_s if timeout_s > 0 else None)
             self._running.pop(service_name, None)
@@ -132,7 +132,7 @@ class PCServiceManager(BaseZMQServer):
         env = os.environ.copy()
         if spec.env:
             env.update({key: str(value) for key, value in spec.env.items()})
-        print(f"[pc-manager] starting service '{spec.name}': {' '.join(command)} (cwd={cwd or os.getcwd()})")
+        print(f"[service-manager] starting service '{spec.name}': {' '.join(command)} (cwd={cwd or os.getcwd()})")
         process = subprocess.Popen(command, cwd=cwd, env=env, stdout=None, stderr=None)
         runner = RunningService(spec=spec, process=process, started_at=time.time())
         timeout = timeout_override if timeout_override is not None else spec.start_timeout_s
@@ -147,12 +147,12 @@ class PCServiceManager(BaseZMQServer):
         if proc.poll() is not None:
             return
         timeout = timeout_override if timeout_override is not None else runner.spec.stop_grace_s
-        print(f"[pc-manager] stopping service '{runner.spec.name}' (pid={proc.pid})")
+        print(f"[service-manager] stopping service '{runner.spec.name}' (pid={proc.pid})")
         proc.terminate()
         try:
             proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            print(f"[pc-manager] service '{runner.spec.name}' did not exit in {timeout:.1f}s; killing")
+            print(f"[service-manager] service '{runner.spec.name}' did not exit in {timeout:.1f}s; killing")
             proc.kill()
             proc.wait(timeout=5.0)
 
@@ -175,6 +175,6 @@ class PCServiceManager(BaseZMQServer):
                 try:
                     self._stop_service(runner)
                 except Exception as exc:  # pragma: no cover - defensive
-                    print(f"[pc-manager] failed to stop service '{runner.spec.name}': {exc}")
+                    print(f"[service-manager] failed to stop service '{runner.spec.name}': {exc}")
             self._running.clear()
         super().close()

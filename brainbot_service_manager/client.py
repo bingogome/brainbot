@@ -6,8 +6,8 @@ from typing import Any
 from brainbot_core.transport import BaseZMQClient
 
 
-class PCServiceManagerClient(BaseZMQClient):
-    """Client to control the PC service manager."""
+class ServiceManagerClient(BaseZMQClient):
+    """Client to control the hub/remote service manager."""
 
     def __init__(
         self,

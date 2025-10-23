@@ -1,6 +1,6 @@
 # Brainbot command service configuration for XLerobot on Jetson Thor
 teleop_manager_defaults: &teleop_manager_defaults
-  host: 192.168.22.171
+  host: ${HUB_HOST:-192.168.22.171}
   port: 7100
   start_timeout_s: 10.0
   stop_timeout_s: 5.0
@@ -8,37 +8,37 @@ teleop_manager_defaults: &teleop_manager_defaults
 teleops:
   leader:
     mode: remote
-    host: 192.168.22.171
+    host: ${HUB_HOST:-192.168.22.171}
     port: 7001
     timeout_ms: 1000
-    config: ../pc/teleop_server.yaml
+    config: ../hub/teleop_server.yaml
     manager:
       <<: *teleop_manager_defaults
       service: teleop_leader
   joycon:
     mode: remote
-    host: 192.168.22.171
+    host: ${HUB_HOST:-192.168.22.171}
     port: 7002
     timeout_ms: 1000
-    config: ../pc/joycon.yaml
+    config: ../hub/joycon.yaml
     manager:
       <<: *teleop_manager_defaults
       service: teleop_joycon
-  # gamepad: # TODO
-  #   mode: remote
-  #   host: 192.168.22.171
-  #   port: 7003
-  #   timeout_ms: 1000
-  #   config: ../pc/gamepad.yaml
-  #   manager:
-  #     <<: *teleop_manager_defaults
-  #     service: teleop_gamepad
+  gamepad:
+    mode: remote
+    host: ${HUB_HOST:-192.168.22.171}
+    port: 7003
+    timeout_ms: 1000
+    config: ../hub/gamepad.yaml
+    manager:
+      <<: *teleop_manager_defaults
+      service: teleop_gamepad
   ar:
     mode: remote
     host: 127.0.0.1
     port: 7004
     timeout_ms: 1000
-    config: ../pc/ar_teleop.yaml
+    config: ../hub/ar_teleop.yaml
     manager:
       <<: *teleop_manager_defaults
       service: teleop_ar
@@ -55,7 +55,7 @@ ai:
   timeout_ms: 5000
   startup_timeout_ms: 1000
   instruction_key: language_instruction
-  modality_config_path: scripts/thor/xlerobot_modality.json
+  modality_config_path: scripts/remote/xlerobot_modality.json
   camera_keys: [left, right, top]
   state_keys:
     - left_shoulder_pan.pos
