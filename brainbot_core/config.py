@@ -55,6 +55,7 @@ class AIClientConfig:
     host: str = "127.0.0.1"
     port: int = 5555
     timeout_ms: int = 5000
+    startup_timeout_ms: int | None = None
     api_token: str | None = None
     instruction_key: str = "language_instruction"
     modality_config_path: str | None = None

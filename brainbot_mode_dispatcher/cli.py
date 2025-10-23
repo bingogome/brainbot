@@ -4,21 +4,14 @@ import json
 import queue
 import threading
 
-from .events import (
-    DataModeEvent,
-    IdleModeEvent,
-    InferenceModeEvent,
-    ModeEventDispatcher,
-    ModeEventListener,
-    ShutdownModeEvent,
-    TeleopModeEvent,
-)
+from .events import ModeEvent, ModeEventDispatcher, ModeEventListener
+from .commands import enqueue_mode_command
 
 
 class CLIModeDispatcher(ModeEventDispatcher):
     def __init__(self, prompt: str = "> "):
         self._prompt = prompt
-        self._queue: queue.Queue[IdleModeEvent | InferenceModeEvent | TeleopModeEvent] | None = None
+        self._queue: queue.Queue[ModeEvent] | None = None
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._listener: ModeEventListener | None = None
@@ -78,31 +71,5 @@ class CLIModeDispatcher(ModeEventDispatcher):
         queue_obj = self._queue
         if queue_obj is None:
             return
-        if "data" in data:
-            value = data["data"]
-            if isinstance(value, dict):
-                target = value.get("mode")
-                command = value.get("command")
-                if target is not None:
-                    queue_obj.put(TeleopModeEvent(alias=str(target) if target else "data"))
-                if command:
-                    queue_obj.put(DataModeEvent(command=str(command)))
-            else:
-                if value in (None, ""):
-                    queue_obj.put(TeleopModeEvent(alias="data"))
-                else:
-                    queue_obj.put(DataModeEvent(command=str(value)))
-            return
-        if "teleop" in data:
-            queue_obj.put(TeleopModeEvent(alias=str(data["teleop"])))
-            return
-        if "infer" in data:
-            queue_obj.put(InferenceModeEvent(instruction=str(data["infer"]).strip()))
-            return
-        if "idle" in data:
-            queue_obj.put(IdleModeEvent(reason=str(data["idle"])) if data["idle"] else IdleModeEvent())
-            return
-        if "shutdown" in data:
-            queue_obj.put(ShutdownModeEvent(reason=str(data["shutdown"])) if data["shutdown"] else ShutdownModeEvent())
-            return
-        print(f"[dispatcher] unsupported command: {data}")
+        if not enqueue_mode_command(data, queue_obj):
+            print(f"[dispatcher] unsupported command: {data}")

@@ -23,7 +23,7 @@ from lerobot.teleoperators.utils import make_teleoperator_from_config
 from brainbot_core.config import AIClientConfig, ServerRuntimeConfig, WebVizConfig, load_server_config
 from brainbot_core.transport import ActionInferenceClient
 from brainbot_core.proto import ObservationMessage
-from brainbot_mode_dispatcher import CLIModeDispatcher
+from brainbot_mode_dispatcher import CLIModeDispatcher, SocketModeDispatcher
 
 from brainbot_webviz import VisualizationServer
 
@@ -284,6 +284,28 @@ def main(argv: list[str] | None = None) -> None:
         default="INFO",
         help="Logging level (e.g. DEBUG, INFO, WARNING)",
     )
+    parser.add_argument(
+        "--mode-dispatcher",
+        choices=("cli", "socket"),
+        default="cli",
+        help="Input dispatcher for mode commands (default: cli)",
+    )
+    parser.add_argument(
+        "--mode-socket",
+        type=Path,
+        help="Unix domain socket path when using the socket dispatcher",
+    )
+    parser.add_argument(
+        "--mode-socket-backlog",
+        type=int,
+        default=5,
+        help="Listen backlog size for the socket dispatcher (default: 5)",
+    )
+    parser.add_argument(
+        "--mode-socket-keep",
+        action="store_true",
+        help="Keep an existing socket file instead of removing it on startup",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -327,16 +349,19 @@ def main(argv: list[str] | None = None) -> None:
         timeout_ms=ai_cfg.timeout_ms,
         api_token=ai_cfg.api_token,
     )
+    startup_timeout_ms = ai_cfg.startup_timeout_ms or ai_cfg.timeout_ms
     try:
-        if ai_cfg.timeout_ms:
-            ai_client.socket.setsockopt(zmq.RCVTIMEO, ai_cfg.timeout_ms)
-            ai_client.socket.setsockopt(zmq.SNDTIMEO, ai_cfg.timeout_ms)
-        if not ai_client.ping():
-            logger.warning("GR00T inference server at %s:%s did not respond to ping", ai_cfg.host, ai_cfg.port)
-    except zmq.error.Again:
-        logger.warning("GR00T inference server ping timed out (host=%s port=%s)", ai_cfg.host, ai_cfg.port)
+        if startup_timeout_ms:
+            with ai_client.temporary_timeout(startup_timeout_ms):
+                if not ai_client.ping():
+                    logger.warning("GR00T ping returned no response (%s:%s)", ai_cfg.host, ai_cfg.port)
+        else:
+            if not ai_client.ping():
+                logger.warning("GR00T ping returned no response (%s:%s)", ai_cfg.host, ai_cfg.port)
+    except TimeoutError:
+        logger.warning("GR00T ping timed out (%s:%s)", ai_cfg.host, ai_cfg.port)
     except Exception as exc:
-        logger.warning("Could not ping GR00T inference server (%s)", exc)
+        logger.warning("GR00T ping failed: %s", exc)
     ai_provider = AICommandProvider(
         client=ai_client,
         instruction_key=ai_cfg.instruction_key,
@@ -376,7 +401,19 @@ def main(argv: list[str] | None = None) -> None:
         exchange_hook=visualizer.update,
     )
 
-    dispatcher = CLIModeDispatcher()
+    if args.mode_dispatcher == "socket":
+        socket_path = args.mode_socket
+        if socket_path is None:
+            parser.error("--mode-socket is required when --mode-dispatcher=socket")
+        dispatcher = SocketModeDispatcher(
+            path=socket_path,
+            backlog=args.mode_socket_backlog,
+            unlink_existing=not args.mode_socket_keep,
+        )
+        print(f"[mode-manager] listening for commands on {socket_path}")
+    else:
+        dispatcher = CLIModeDispatcher()
+
     manager = ModeManager(
         service=server,
         dispatcher=dispatcher,

@@ -30,6 +30,7 @@ ai:
   host: 172.17.0.2        # GR00T running in container on Thor
   port: 5555
   timeout_ms: 5000
+  startup_timeout_ms: 1000
   instruction_key: language_instruction
   modality_config_path: scripts/thor/xlerobot_modality.json
   camera_keys: [left, right, top]

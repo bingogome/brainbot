@@ -73,6 +73,47 @@ python brainbot/scripts/pc/run_teleop_server.py \
 (AR controllers are configured similarly using `mode: local`.)
 
 ### Mode Control & Visualization
+
+### Socket Mode Commands
+
+Launch the services with a UNIX socket dispatcher (examples assume `/tmp/brainbot_modesock`):
+
+```bash
+python brainbot/scripts/thor/run_all.py --mode-socket /tmp/brainbot_modesock
+# …or the command service only
+python brainbot/scripts/thor/run_thor_command.py --mode-socket /tmp/brainbot_modesock
+```
+
+Send mode changes from another terminal using the helper script:
+
+```bash
+# Switch teleop provider
+python brainbot/scripts/thor/send_mode_command.py teleop leader
+python brainbot/scripts/thor/send_mode_command.py teleop joycon
+python brainbot/scripts/thor/send_mode_command.py teleop gamepad
+python brainbot/scripts/thor/send_mode_command.py teleop ar
+
+# AI instructions
+python brainbot/scripts/thor/send_mode_command.py infer "Pick up the block"
+python brainbot/scripts/thor/send_mode_command.py infer "Open the shelf"
+
+# Idle / shutdown
+python brainbot/scripts/thor/send_mode_command.py idle
+python brainbot/scripts/thor/send_mode_command.py shutdown
+
+# Data collection helpers
+python brainbot/scripts/thor/send_mode_command.py data start
+python brainbot/scripts/thor/send_mode_command.py data resume
+python brainbot/scripts/thor/send_mode_command.py data next
+python brainbot/scripts/thor/send_mode_command.py data stop
+python brainbot/scripts/thor/send_mode_command.py data rerecord
+
+# Raw JSON fallback when you need a custom payload
+python brainbot/scripts/thor/send_mode_command.py raw '{"teleop":"leader"}'
+```
+
+Responses from the command service are printed to stdout (`OK`, errors, or blank on success).
+
 - Send JSON commands in runtime on the edge machine to swap providers:
   - `{"teleop": "leader"}`
   - `{"teleop": "ar"}`

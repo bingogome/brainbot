@@ -13,6 +13,7 @@ import io
 import json
 from dataclasses import dataclass
 from typing import Any, Callable
+from contextlib import contextmanager
 
 import msgpack
 import numpy as np
@@ -178,7 +179,7 @@ class BaseZMQClient:
         self.context = zmq.Context.instance()
         self.host = host
         self.port = port
-        self.timeout_ms = timeout_ms
+        self.timeout_ms = int(timeout_ms)
         self.api_token = api_token
         self._init_socket()
 
@@ -191,10 +192,32 @@ class BaseZMQClient:
                 pass
         self.socket = self.context.socket(zmq.REQ)
         self.socket.setsockopt(zmq.LINGER, 0)
-        if self.timeout_ms:
-            self.socket.setsockopt(zmq.RCVTIMEO, self.timeout_ms)
-            self.socket.setsockopt(zmq.SNDTIMEO, self.timeout_ms)
+        self._apply_socket_timeouts(self.timeout_ms)
         self.socket.connect(f"tcp://{self.host}:{self.port}")
+
+    def _apply_socket_timeouts(self, timeout_ms: int | None) -> None:
+        if not hasattr(self, "socket") or self.socket is None:
+            return
+        if timeout_ms and timeout_ms > 0:
+            self.socket.setsockopt(zmq.RCVTIMEO, timeout_ms)
+            self.socket.setsockopt(zmq.SNDTIMEO, timeout_ms)
+        else:
+            self.socket.setsockopt(zmq.RCVTIMEO, -1)
+            self.socket.setsockopt(zmq.SNDTIMEO, -1)
+
+    def set_timeout(self, timeout_ms: int | None) -> None:
+        value = int(timeout_ms) if timeout_ms and timeout_ms > 0 else 0
+        self.timeout_ms = value
+        self._apply_socket_timeouts(value if value else None)
+
+    @contextmanager
+    def temporary_timeout(self, timeout_ms: int | None):
+        previous = self.timeout_ms if self.timeout_ms else None
+        self.set_timeout(timeout_ms)
+        try:
+            yield
+        finally:
+            self.set_timeout(previous)
 
     def ping(self) -> bool:
         try:

@@ -9,11 +9,13 @@ from .events import (
     TeleopModeEvent,
 )
 from .cli import CLIModeDispatcher
+from .socket import SocketModeDispatcher
 
 __all__ = [
     "InferenceModeEvent",
     "DataModeEvent",
     "IdleModeEvent",
+    "SocketModeDispatcher",
     "CLIModeDispatcher",
     "ModeEvent",
     "ModeEventDispatcher",

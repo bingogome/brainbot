@@ -6,12 +6,12 @@ teleop:
   port: 7010
   timeout_ms: 1500
 dataset:
-  repo_id: ${HF_USER:-your_user}/xlerobot-data
-  root: /home/thor/.cache/huggingface/lerobot/yihao-brain-bot/xlerobot-data
+  repo_id: ${HF_USER:-your_user}/xlerobot-get-fork
+  root: /home/thor/.cache/huggingface/lerobot/yihao-brain-bot/xlerobot-get-fork
   episode_time_s: 300
   reset_time_s: 300
   num_episodes: 20
-  single_task: "Use the right arm to pick up the Musketeer candy bar and place it in the paper box."
+  single_task: "Pick up the fork from the table using the left arm, and place it in the basket."
   video: true
   push_to_hub: false
   video_encoding_batch_size: 1
