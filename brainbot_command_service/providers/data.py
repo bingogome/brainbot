@@ -392,7 +392,7 @@ class DataCollectionCommandProvider(CommandProvider):
 
     def _begin_recording(self, now: float, *, fresh: bool = False) -> None:
         self._ensure_video_manager()
-        
+
         self._state = "record"
         self._recording_enabled = True
         self._state_deadline = now + self._episode_seconds
@@ -400,7 +400,8 @@ class DataCollectionCommandProvider(CommandProvider):
         target = self._target_episodes or "?"
         prefix = "Starting" if fresh else "Resuming"
         logger.info("[data] %s recording for episode %s/%s (%.1fs)", prefix, current, target, self._episode_seconds)
-        
+        print(f"[data] {prefix.lower()} recording for episode {current}/{target} (window {self._episode_seconds:.1f}s)")
+
         if self._dataset is not None:
             log_say(f"Recording episode {self._dataset.num_episodes}", self._play_sounds)
 
