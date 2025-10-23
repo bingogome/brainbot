@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
-
-from typing import Any
+import logging
 
 try:
     from lerobot.processor import RobotProcessorPipeline, make_default_processors
@@ -17,6 +16,7 @@ from brainbot_core.proto import ActionMessage, MessageSerializer
 
 
 class TeleopActionServer(BaseZMQServer):
+    _logger = logging.getLogger(__name__)
     def __init__(
         self,
         teleop: Teleoperator,
@@ -41,9 +41,15 @@ class TeleopActionServer(BaseZMQServer):
     def run(self) -> None:
         self.teleop.connect()
         try:
-            super().run()
+            try:
+                super().run()
+            except KeyboardInterrupt:
+                pass
         finally:
-            self.teleop.disconnect()
+            try:
+                self.teleop.disconnect()
+            except Exception as exc:  # pragma: no cover - defensive
+                self._logger.warning("Teleop disconnect failed (%s): %s", exc.__class__.__name__, exc)
             self.close()
 
     def _handle_get_action(self, data: dict[str, Any]) -> dict[str, Any]:
