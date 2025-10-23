@@ -38,8 +38,8 @@ robot:
 network:
   host: 127.0.0.1
   port: 6000
-loop_hz: 40
-max_missed_actions: 3
+loop_hz: 60
+max_missed_actions: 5
 fallback_action: {}
 calibrate_on_start: true
 observation_adapter: identity
