@@ -15,8 +15,8 @@ teleop:
     mount:
       joystick_index: 0
       deadzone: 0.15
-      max_pan_speed_dps: 120.0
-      max_tilt_speed_dps: 90.0
+      max_pan_speed_dps: 360.0
+      max_tilt_speed_dps: 360.0
 network:
   host: 0.0.0.0
   port: 7001
