@@ -21,8 +21,13 @@ def enqueue_mode_command(data: Mapping[str, Any], queue_obj: queue.Queue[ModeEve
         if isinstance(value, Mapping):
             target = value.get("mode")
             command = value.get("command")
+            alias = None
             if target is not None:
-                queue_obj.put(TeleopModeEvent(alias=str(target) if target else "data"))
+                alias = str(target) if target else "data"
+            elif command:
+                alias = "data"
+            if alias is not None:
+                queue_obj.put(TeleopModeEvent(alias=alias))
                 dispatched = True
             if command:
                 queue_obj.put(DataModeEvent(command=str(command)))
@@ -31,6 +36,7 @@ def enqueue_mode_command(data: Mapping[str, Any], queue_obj: queue.Queue[ModeEve
             if value in (None, ""):
                 queue_obj.put(TeleopModeEvent(alias="data"))
             else:
+                queue_obj.put(TeleopModeEvent(alias="data"))
                 queue_obj.put(DataModeEvent(command=str(value)))
             dispatched = True
         return dispatched

@@ -161,6 +161,11 @@ Add a data recording configuration to your command service YAML.
    - **Save Current Episode:** `{"data": {"command": "next"}}` or `{"data": {"command": "skip"}}`
    - **Stop Data Collection:** `{"data": {"command": "stop"}}` or `{"data": {"command": "end"}}`
    - **Re-record Episode:** `{"data": {"command": "rerecord"}}` or `{"data": {"command": "redo"}}`
+   - The helper script automatically switches into the data mode slot before issuing the control command:
+     ```bash
+     python scripts/remote/send_mode_command.py data start
+     python scripts/remote/send_mode_command.py data next
+     ```
 
 3. **Typical Recording Workflow:**
    ```bash
