@@ -49,6 +49,11 @@ class TeleopActionServer(BaseZMQServer):
     def _handle_get_action(self, data: dict[str, Any]) -> dict[str, Any]:
         obs = data.get("observation", {})
         robot_obs = obs.get("robot", {}) if isinstance(obs, dict) else {}
+        if hasattr(self.teleop, "on_observation"):
+            try:
+                self.teleop.on_observation(robot_obs)
+            except Exception:
+                pass
         raw_action = self.teleop.get_action()
         teleop_action = (
             self.teleop_action_processor((raw_action, robot_obs))
