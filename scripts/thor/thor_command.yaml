@@ -11,7 +11,7 @@ teleops:
     host: 192.168.22.171
     port: 7001
     timeout_ms: 1000
-    config: brainbot/scripts/pc/teleop_server.yaml
+    config: ../pc/teleop_server.yaml
     manager:
       <<: *teleop_manager_defaults
       service: teleop_leader
@@ -20,7 +20,7 @@ teleops:
     host: 192.168.22.171
     port: 7002
     timeout_ms: 1000
-    config: brainbot/scripts/pc/joycon.yaml
+    config: ../pc/joycon.yaml
     manager:
       <<: *teleop_manager_defaults
       service: teleop_joycon
@@ -29,7 +29,7 @@ teleops:
   #   host: 192.168.22.171
   #   port: 7003
   #   timeout_ms: 1000
-  #   config: brainbot/scripts/pc/gamepad.yaml
+  #   config: ../pc/gamepad.yaml
   #   manager:
   #     <<: *teleop_manager_defaults
   #     service: teleop_gamepad
@@ -38,7 +38,7 @@ teleops:
     host: 127.0.0.1
     port: 7004
     timeout_ms: 1000
-    config: brainbot/scripts/pc/ar_teleop.yaml
+    config: ../pc/ar_teleop.yaml
     manager:
       <<: *teleop_manager_defaults
       service: teleop_ar

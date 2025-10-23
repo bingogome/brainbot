@@ -12,39 +12,39 @@ services:
     <<: *teleop_service_defaults
     command:
       - "{python}"
-      - brainbot/scripts/pc/run_teleop_server.py
+      - ../pc/run_teleop_server.py
       - --config
-      - brainbot/scripts/pc/teleop_server.yaml
+      - ../pc/teleop_server.yaml
 
   teleop_joycon:
     <<: *teleop_service_defaults
     command:
       - "{python}"
-      - brainbot/scripts/pc/run_teleop_server.py
+      - ../pc/run_teleop_server.py
       - --config
-      - brainbot/scripts/pc/joycon.yaml
+      - ../pc/joycon.yaml
 
   teleop_gamepad:
     <<: *teleop_service_defaults
     command:
       - "{python}"
-      - brainbot/scripts/pc/run_teleop_server.py
+      - ../pc/run_teleop_server.py
       - --config
-      - brainbot/scripts/pc/gamepad.yaml
+      - ../pc/gamepad.yaml
 
   teleop_ar:
     <<: *teleop_service_defaults
     command:
       - "{python}"
-      - brainbot/scripts/pc/run_teleop_server.py
+      - ../pc/run_teleop_server.py
       - --config
-      - brainbot/scripts/pc/ar_teleop.yaml
+      - ../pc/ar_teleop.yaml
 
   data_collection:
     <<: *teleop_service_defaults
     command:
       - "{python}"
-      - brainbot/scripts/pc/run_data_server.py
+      - ../pc/run_data_server.py
       - --config
-      - brainbot/scripts/pc/data_server.yaml
+      - ../pc/data_server.yaml
     start_timeout_s: 15.0

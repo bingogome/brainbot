@@ -8,7 +8,7 @@ teleop_manager_defaults: &teleop_manager_defaults
 
 teleop:
   mode: remote
-  config: brainbot/scripts/pc/data_server.yaml
+  config: ../pc/data_server.yaml
   timeout_ms: 1500
   manager:
     <<: *teleop_manager_defaults
