@@ -70,6 +70,17 @@ class RemoteTeleopConfig:
     port: int
     timeout_ms: int = 1500
     api_token: str | None = None
+    manager: "RemoteTeleopManagerConfig | None" = None
+    config_path: str | None = None
+
+
+@dataclass(slots=True)
+class RemoteTeleopManagerConfig:
+    service: str
+    host: str | None = None
+    port: int = 7100
+    start_timeout_s: float = 10.0
+    stop_timeout_s: float = 5.0
 
 
 @dataclass(slots=True)
@@ -174,9 +185,9 @@ def load_server_config(path: Path) -> ServerRuntimeConfig:
     teleop_cfgs: dict[str, TeleopEndpointConfig] = {}
     if teleops_data:
         for name, cfg in teleops_data.items():
-            teleop_cfgs[name] = _make_teleop_endpoint(name, cfg)
+            teleop_cfgs[name] = _make_teleop_endpoint(name, cfg, base_dir)
     elif teleop_single is not None:
-        teleop_cfgs["default"] = _make_teleop_endpoint("default", teleop_single)
+        teleop_cfgs["default"] = _make_teleop_endpoint("default", teleop_single, base_dir)
 
     default_mode = raw.pop("default_mode", None)
     if default_mode is None and teleop_cfgs:
@@ -321,7 +332,7 @@ def _load_data_mode_config(data: Mapping[str, Any] | str | Path, base_dir: Path 
     teleop_cfg: TeleopEndpointConfig | None = None
     if teleop_raw:
         if isinstance(teleop_raw, Mapping) and teleop_raw.get("mode"):
-            teleop_cfg = _make_teleop_endpoint("data", teleop_raw)
+            teleop_cfg = _make_teleop_endpoint("data", teleop_raw, base_dir)
         else:
             local_cfg = _load_draccus_config(teleop_raw, TeleoperatorConfig)
             teleop_cfg = TeleopEndpointConfig(mode="local", local=local_cfg)
@@ -355,18 +366,69 @@ def _load_robot_config_from_path(value: str | Path, base_dir: Path | None) -> Ma
     return dict(robot_data)
 
 
-def _make_teleop_endpoint(name: str, cfg: Mapping[str, Any]) -> TeleopEndpointConfig:
+def _resolve_remote_endpoint(
+    host: str | None,
+    port: int | str | None,
+    config_path: str | Path | None,
+    base_dir: Path | None,
+) -> tuple[str, int, str | None]:
+    resolved_path: str | None = None
+    resolved_host = host
+    resolved_port = int(port) if port is not None else None
+    if config_path:
+        path_obj = _resolve_config_path(config_path, base_dir)
+        resolved_path = str(path_obj)
+        config_data = _load_yaml(path_obj) or {}
+        network_cfg = config_data.get("network", {})
+        if isinstance(network_cfg, Mapping):
+            if resolved_port is None and network_cfg.get("port") is not None:
+                resolved_port = int(network_cfg["port"])
+            net_host = network_cfg.get("host")
+            if resolved_host is None and isinstance(net_host, str):
+                resolved_host = net_host
+    if resolved_host is None:
+        resolved_host = "127.0.0.1"
+    if resolved_host == "0.0.0.0":
+        resolved_host = "127.0.0.1"
+    if resolved_port is None:
+        raise ValueError(
+            "Remote teleop requires 'port' (directly or via referenced config 'network.port')"
+        )
+    return str(resolved_host), resolved_port, resolved_path
+
+
+def _make_teleop_endpoint(name: str, cfg: Mapping[str, Any], base_dir: Path | None = None) -> TeleopEndpointConfig:
     mode = cfg.get("mode")
     if mode == "remote":
-        if "host" not in cfg or "port" not in cfg:
-            raise ValueError(f"Remote teleop '{name}' requires 'host' and 'port'")
+        manager_cfg = None
+        manager_raw = cfg.get("manager")
+        if manager_raw:
+            if "service" not in manager_raw:
+                raise ValueError(f"Remote teleop '{name}' manager config requires 'service'")
+            manager_cfg = RemoteTeleopManagerConfig(
+                service=str(manager_raw.get("service")),
+                host=manager_raw.get("host"),
+                port=int(manager_raw.get("port", 7100)),
+                start_timeout_s=float(manager_raw.get("start_timeout_s", 10.0)),
+                stop_timeout_s=float(manager_raw.get("stop_timeout_s", 5.0)),
+            )
+        host_raw = cfg.get("host")
+        port_raw = cfg.get("port")
+        config_path_raw = cfg.get("config")
+        if host_raw is None and manager_cfg and manager_cfg.host:
+            host_raw = manager_cfg.host
+        host, port, resolved_cfg_path = _resolve_remote_endpoint(host_raw, port_raw, config_path_raw, base_dir)
+        if manager_cfg and manager_cfg.host is None:
+            manager_cfg.host = host
         return TeleopEndpointConfig(
             mode="remote",
             remote=RemoteTeleopConfig(
-                host=str(cfg["host"]),
-                port=int(cfg["port"]),
+                host=host,
+                port=port,
                 timeout_ms=int(cfg.get("timeout_ms", 1500)),
                 api_token=cfg.get("api_token"),
+                manager=manager_cfg,
+                config_path=resolved_cfg_path,
             ),
         )
     if mode == "local":

@@ -324,6 +324,7 @@ def main(argv: list[str] | None = None) -> None:
                 port=endpoint.remote.port,
                 timeout_ms=endpoint.remote.timeout_ms,
                 api_token=endpoint.remote.api_token,
+                manager_config=endpoint.remote.manager,
             )
         elif endpoint.mode == "local" and endpoint.local is not None:
             teleop = make_teleoperator_from_config(endpoint.local)

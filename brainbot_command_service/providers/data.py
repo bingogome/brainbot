@@ -185,6 +185,7 @@ class DataCollectionCommandProvider(CommandProvider):
                 timeout_ms=teleop_endpoint.remote.timeout_ms,
                 api_token=teleop_endpoint.remote.api_token,
                 observation_adapter=numeric_observation_payload,
+                manager_config=teleop_endpoint.remote.manager,
             )
             self._remote_provider.prepare()
         elif teleop_endpoint.mode == "local":
