@@ -149,13 +149,16 @@ class ServiceManager(BaseZMQServer):
             return
         timeout = timeout_override if timeout_override is not None else runner.spec.stop_grace_s
         print(f"[service-manager] stopping service '{runner.spec.name}' (pid={proc.pid})")
-        proc.send_signal(signal.SIGINT) 
+        proc.send_signal(signal.SIGINT)
         try:
             proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             print(f"[service-manager] service '{runner.spec.name}' did not exit in {timeout:.1f}s; killing")
             proc.kill()
-            proc.wait(timeout=5.0)
+            try:
+                proc.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                print(f"[service-manager] service '{runner.spec.name}' did not respond to SIGKILL")
 
     @staticmethod
     def _wait_for_port(host: str, port: int, timeout: float) -> None:
@@ -175,6 +178,7 @@ class ServiceManager(BaseZMQServer):
             for runner in list(self._running.values()):
                 try:
                     self._stop_service(runner)
+                    print(f"[service-manager] service '{runner.spec.name}' stopped")
                 except Exception as exc:  # pragma: no cover - defensive
                     print(f"[service-manager] failed to stop service '{runner.spec.name}': {exc}")
             self._running.clear()
