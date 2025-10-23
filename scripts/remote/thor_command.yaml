@@ -1,6 +1,6 @@
 # Brainbot command service configuration for XLerobot on Jetson Thor
 teleop_manager_defaults: &teleop_manager_defaults
-  host: ${HUB_HOST:-192.168.22.171}
+  host: ${HUB_HOST}
   port: 7100
   start_timeout_s: 10.0
   stop_timeout_s: 5.0
@@ -8,7 +8,7 @@ teleop_manager_defaults: &teleop_manager_defaults
 teleops:
   leader:
     mode: remote
-    host: ${HUB_HOST:-192.168.22.171}
+    host: ${HUB_HOST}
     port: 7001
     timeout_ms: 1000
     config: ../hub/teleop_server.yaml
@@ -17,7 +17,7 @@ teleops:
       service: teleop_leader
   joycon:
     mode: remote
-    host: ${HUB_HOST:-192.168.22.171}
+    host: ${HUB_HOST}
     port: 7002
     timeout_ms: 1000
     config: ../hub/joycon.yaml
@@ -26,7 +26,7 @@ teleops:
       service: teleop_joycon
   gamepad:
     mode: remote
-    host: ${HUB_HOST:-192.168.22.171}
+    host: ${HUB_HOST}
     port: 7003
     timeout_ms: 1000
     config: ../hub/gamepad.yaml

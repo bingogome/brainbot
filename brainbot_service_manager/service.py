@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import signal
 import socket
 import subprocess
 import threading
@@ -148,7 +149,7 @@ class ServiceManager(BaseZMQServer):
             return
         timeout = timeout_override if timeout_override is not None else runner.spec.stop_grace_s
         print(f"[service-manager] stopping service '{runner.spec.name}' (pid={proc.pid})")
-        proc.terminate()
+        proc.send_signal(signal.SIGINT) 
         try:
             proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:

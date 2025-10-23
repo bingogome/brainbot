@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Mapping
@@ -357,6 +359,22 @@ def _resolve_config_path(value: str | Path, base_dir: Path | None) -> Path:
     return path_obj
 
 
+_ENV_DEFAULT_RE = re.compile(r"\$\{([^}:]+):-([^}]+)\}")
+
+
+def _expand_env_var(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    def repl(match: re.Match[str]) -> str:
+        var, default = match.group(1), match.group(2)
+        return os.environ.get(var, default)
+
+    expanded = _ENV_DEFAULT_RE.sub(repl, value)
+    expanded = os.path.expandvars(expanded)
+    return expanded
+
+
 def _load_robot_config_from_path(value: str | Path, base_dir: Path | None) -> Mapping[str, Any]:
     path_obj = _resolve_config_path(value, base_dir)
     data = _load_yaml(path_obj)
@@ -373,7 +391,7 @@ def _resolve_remote_endpoint(
     base_dir: Path | None,
 ) -> tuple[str, int, str | None]:
     resolved_path: str | None = None
-    resolved_host = host
+    resolved_host = _expand_env_var(host)
     resolved_port = int(port) if port is not None else None
     if config_path:
         path_obj = _resolve_config_path(config_path, base_dir)
@@ -385,8 +403,10 @@ def _resolve_remote_endpoint(
                 resolved_port = int(network_cfg["port"])
             net_host = network_cfg.get("host")
             if resolved_host is None and isinstance(net_host, str):
-                resolved_host = net_host
-    if resolved_host is None:
+                resolved_host = _expand_env_var(str(net_host))
+    if resolved_host:
+        resolved_host = resolved_host.strip()
+    if not resolved_host:
         resolved_host = "127.0.0.1"
     if resolved_host == "0.0.0.0":
         resolved_host = "127.0.0.1"
@@ -407,7 +427,7 @@ def _make_teleop_endpoint(name: str, cfg: Mapping[str, Any], base_dir: Path | No
                 raise ValueError(f"Remote teleop '{name}' manager config requires 'service'")
             manager_cfg = RemoteTeleopManagerConfig(
                 service=str(manager_raw.get("service")),
-                host=manager_raw.get("host"),
+                host=_expand_env_var(manager_raw.get("host")),
                 port=int(manager_raw.get("port", 7100)),
                 start_timeout_s=float(manager_raw.get("start_timeout_s", 10.0)),
                 stop_timeout_s=float(manager_raw.get("stop_timeout_s", 5.0)),

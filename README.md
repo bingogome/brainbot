@@ -72,6 +72,7 @@ python scripts/remote/run_thor_robot.py --config scripts/remote/thor_robot.yaml 
 ```
 
 > All commands are intended to be executed from the repository root (`brainbot` directory) on the respective host.
+> If `HUB_HOST` is not set, the command service assumes `127.0.0.1` for any unresolved host strings.
 
 If any teleop/data server is configured with `host: 127.0.0.1` (e.g., the AR teleop running on `remote_host`), start a service manager locally as well:
 
@@ -186,20 +187,20 @@ Add a data recording configuration to your command service YAML.
 ```yaml
 teleops:
   leader:
-    mode: remote
-    host: ${HUB_HOST:-192.168.22.171}
+   mode: remote
+    host: ${HUB_HOST}
     port: 7001
     timeout_ms: 1000
     config: ../hub/teleop_server.yaml
   joycon:
-    mode: remote
-    host: ${HUB_HOST:-192.168.22.171}
+   mode: remote
+    host: ${HUB_HOST}
     port: 7002
     timeout_ms: 1000
     config: ../hub/joycon.yaml
   gamepad:
-    mode: remote
-    host: ${HUB_HOST:-192.168.22.171}
+   mode: remote
+    host: ${HUB_HOST}
     port: 7003
     timeout_ms: 1000
     config: ../hub/gamepad.yaml
