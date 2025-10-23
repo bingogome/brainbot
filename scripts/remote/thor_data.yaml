@@ -14,14 +14,14 @@ teleop:
     <<: *teleop_manager_defaults
     service: data_collection
     start_timeout_s: 15.0
-    host: 127.0.0.1
+    host: ${HUB_HOST}
 dataset:
-  repo_id: ${HF_USER:-your_user}/xlerobot-get-fork
-  root: /home/thor/.cache/huggingface/lerobot/yihao-brain-bot/xlerobot-get-fork
+  repo_id: ${HF_USER:-your_user}/xlerobot-roam-office2
+  root: /home/thor/.cache/huggingface/lerobot/yihao-brain-bot/xlerobot-roam-office2
   episode_time_s: 300
   reset_time_s: 300
   num_episodes: 20
-  single_task: "Pick up the fork from the table using the left arm, and place it in the basket."
+  single_task: "XLeRobot roams the office."
   video: true
   push_to_hub: false
   video_encoding_batch_size: 1
