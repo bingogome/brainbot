@@ -20,7 +20,10 @@ def _infer_ready_endpoint(command: Sequence[str], base_dir: Path) -> tuple[str |
             break
         config_path = Path(command[index + 1])
         if not config_path.is_absolute():
-            config_path = (base_dir / config_path).resolve()
+            if config_path.exists():
+                config_path = config_path.resolve()
+            else:
+                config_path = (base_dir / config_path).resolve()
         if not config_path.exists():
             raise FileNotFoundError(f"Config file referenced by service command not found: {config_path}")
         with config_path.open("r", encoding="utf-8") as handle:
@@ -60,6 +63,19 @@ def _load_config(path: Path) -> tuple[dict[str, Any], dict[str, ServiceSpec]]:
         if not isinstance(raw_spec, dict):
             raise ValueError(f"Service '{name}' configuration must be a mapping")
         command = _normalize_command(raw_spec.get("command"))
+        command = list(command)
+        for idx, part in enumerate(command):
+            if part == "{python}":
+                continue
+            candidate = Path(part)
+            if candidate.is_absolute():
+                continue
+            if candidate.exists():
+                command[idx] = str(candidate.resolve())
+                continue
+            resolved_candidate = (base_dir / candidate).resolve()
+            if resolved_candidate.exists():
+                command[idx] = str(resolved_candidate)
         cwd = raw_spec.get("cwd")
         env = raw_spec.get("env")
         ready_host = raw_spec.get("ready_host")

@@ -1,13 +1,13 @@
 # TODO
-# # Teleop server configuration for XLerobot base-only gamepad control
-# teleop:
-#   mode: local
-#   config:
-#     type: lekiwi_base_gamepad
-#     joystick_index: 0
-#     max_speed_mps: 0.8
-#     deadzone: 0.15
-#     yaw_speed_deg: 45
-# network:
-#   host: 0.0.0.0
-#   port: 7003
+# Teleop server configuration for XLerobot base-only gamepad control
+teleop:
+  mode: local
+  config:
+    type: lekiwi_base_gamepad
+    joystick_index: 0
+    max_speed_mps: 0.8
+    deadzone: 0.15
+    yaw_speed_deg: 45
+network:
+  host: 0.0.0.0
+  port: 7003
