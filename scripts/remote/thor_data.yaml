@@ -1,0 +1,29 @@
+# Data collection configuration for XLerobot on Jetson Thor
+robot_config_path: thor_robot.yaml
+teleop_manager_defaults: &teleop_manager_defaults
+  host: ${HUB_HOST}
+  port: 7100
+  start_timeout_s: 10.0
+  stop_timeout_s: 5.0
+
+teleop:
+  mode: remote
+  config: ../hub/data_server.yaml
+  timeout_ms: 1500
+  manager:
+    <<: *teleop_manager_defaults
+    service: data_collection
+    start_timeout_s: 15.0
+    host: ${HUB_HOST}
+dataset:
+  repo_id: ${HF_USER:-your_user}/xlerobot-roam-office
+  root: /home/thor/.cache/huggingface/lerobot/yihao-brain-bot/xlerobot-roam-office
+  episode_time_s: 1000
+  reset_time_s: 1000
+  num_episodes: 20
+  single_task: "XLeRobot roams the office."
+  video: true
+  push_to_hub: false
+  video_encoding_batch_size: 1
+display_data: false
+resume: false

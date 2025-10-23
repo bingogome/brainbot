@@ -1,25 +1,48 @@
 # Brainbot command service configuration for XLerobot on Jetson Thor
+teleop_manager_defaults: &teleop_manager_defaults
+  host: ${HUB_HOST}
+  port: 7100
+  start_timeout_s: 10.0
+  stop_timeout_s: 5.0
+
 teleops:
   leader:
     mode: remote
-    host: 192.168.22.171
+    host: ${HUB_HOST}
     port: 7001
     timeout_ms: 1000
+    config: ../hub/teleop_server.yaml
+    manager:
+      <<: *teleop_manager_defaults
+      service: teleop_leader
   joycon:
     mode: remote
-    host: 192.168.22.171
+    host: ${HUB_HOST}
     port: 7002
     timeout_ms: 1000
+    config: ../hub/joycon.yaml
+    manager:
+      <<: *teleop_manager_defaults
+      service: teleop_joycon
   gamepad:
     mode: remote
-    host: 192.168.22.171
+    host: ${HUB_HOST}
     port: 7003
     timeout_ms: 1000
+    config: ../hub/gamepad.yaml
+    manager:
+      <<: *teleop_manager_defaults
+      service: teleop_gamepad
   ar:
     mode: remote
     host: 127.0.0.1
     port: 7004
     timeout_ms: 1000
+    config: ../hub/ar_teleop.yaml
+    manager:
+      <<: *teleop_manager_defaults
+      service: teleop_ar
+      host: 127.0.0.1
   # localteleop: # Example local teleop if running on-device
   #   mode: local
   #   config:
@@ -30,8 +53,9 @@ ai:
   host: 172.17.0.2        # GR00T running in container on Thor
   port: 5555
   timeout_ms: 5000
+  startup_timeout_ms: 1000
   instruction_key: language_instruction
-  modality_config_path: scripts/thor/xlerobot_modality.json
+  modality_config_path: scripts/remote/xlerobot_modality.json
   camera_keys: [left, right, top]
   state_keys:
     - left_shoulder_pan.pos
@@ -66,13 +90,13 @@ camera_stream:
   sources:
     - name: left
       path: robot.cameras.left
-      fps: 15
+      fps: 10
     - name: right
       path: robot.cameras.right
-      fps: 15
+      fps: 10
     - name: top
       path: robot.cameras.top
-      fps: 15
+      fps: 10
 data:
   config_path: thor_data.yaml
 default_mode: idle

@@ -1,4 +1,4 @@
-# Teleop server configuration for XLerobot leader teleop (arms + base)
+# Generic teleop server template for XLerobot
 teleop:
   mode: local
   config:
@@ -13,7 +13,11 @@ teleop:
       max_speed_mps: 0.8
       deadzone: 0.15
       yaw_speed_deg: 45
-    mount: {}
+    mount:
+      joystick_index: 0
+      deadzone: 0.20
+      max_pan_speed_dps: 360.0
+      max_tilt_speed_dps: 360.0
 network:
   host: 0.0.0.0
   port: 7001

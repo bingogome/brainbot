@@ -6,6 +6,8 @@ from typing import Any, Callable
 
 from brainbot_core.transport import BaseZMQClient
 from brainbot_core.proto import ActionMessage, MessageSerializer, ObservationMessage
+from brainbot_core.config import RemoteTeleopManagerConfig
+from brainbot_service_manager import ServiceManagerClient
 
 from .base import CommandProvider, numeric_only
 
@@ -62,6 +64,7 @@ class RemoteTeleopCommandProvider(CommandProvider):
         timeout_ms: int = 1500,
         api_token: str | None = None,
         observation_adapter: Callable[[ObservationMessage], dict[str, Any]] | None = None,
+        manager_config: RemoteTeleopManagerConfig | None = None,
     ):
         self.host = host
         self.port = port
@@ -69,8 +72,12 @@ class RemoteTeleopCommandProvider(CommandProvider):
         self.api_token = api_token
         self._client: RemoteTeleopClient | None = None
         self._observation_adapter = observation_adapter or numeric_observation_payload
+        self._manager_config = manager_config
+        self._manager_client: ServiceManagerClient | None = None
+        self._manager_started: bool = False
 
     def prepare(self) -> None:
+        self._ensure_manager_service()
         if self._client is None:
             self._client = RemoteTeleopClient(
                 host=self.host, port=self.port, timeout_ms=self.timeout_ms, api_token=self.api_token
@@ -81,7 +88,7 @@ class RemoteTeleopCommandProvider(CommandProvider):
             raise ConnectionError(f"Failed to reach teleop server {self.host}:{self.port}")
 
     def shutdown(self) -> None:
-        return None
+        self._stop_manager_service()
 
     def compute_command(self, observation: ObservationMessage) -> ActionMessage:
         if self._client is None:
@@ -96,6 +103,43 @@ class RemoteTeleopCommandProvider(CommandProvider):
         if "action" not in response:
             raise RuntimeError(f"Remote teleop response missing action: {response}")
         return MessageSerializer.ensure_action(response["action"])
+
+    def _ensure_manager_service(self) -> None:
+        if not self._manager_config:
+            return
+        if self._manager_client is None:
+            host = self._manager_config.host or self.host
+            self._manager_client = ServiceManagerClient(
+                host=host,
+                port=self._manager_config.port,
+                timeout_ms=max(
+                    self.timeout_ms,
+                    int((self._manager_config.start_timeout_s + 5.0) * 1000),
+                ),
+            )
+        print(
+            f"[remote-teleop] requesting manager start for service '{self._manager_config.service}' "
+            f"via {self._manager_client.host}:{self._manager_client.port}"
+        )
+        self._manager_client.ensure_service(
+            self._manager_config.service, timeout_s=self._manager_config.start_timeout_s
+        )
+        self._manager_started = True
+
+    def _stop_manager_service(self) -> None:
+        if not self._manager_started or not self._manager_client or not self._manager_config:
+            return
+        try:
+            print(
+                f"[remote-teleop] requesting manager stop for service '{self._manager_config.service}'"
+            )
+            self._manager_client.stop_service(
+                self._manager_config.service, timeout_s=self._manager_config.stop_timeout_s
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            print(f"[remote-teleop] failed to stop managed service '{self._manager_config.service}': {exc}")
+        finally:
+            self._manager_started = False
 
 
 class LocalTeleopCommandProvider(CommandProvider):

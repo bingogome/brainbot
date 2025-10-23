@@ -1,0 +1,55 @@
+manager:
+  host: 0.0.0.0
+  port: 7100
+
+teleop_service_defaults: &teleop_service_defaults
+  ready_host: 127.0.0.1
+  start_timeout_s: 10.0
+  stop_grace_s: 5.0
+
+services:
+  teleop_leader:
+    <<: *teleop_service_defaults
+    command:
+      - "{python}"
+      - run_teleop_server.py
+      - --config
+      - teleop_server.yaml
+    cwd: scripts/hub
+
+  teleop_joycon:
+    <<: *teleop_service_defaults
+    command:
+      - "{python}"
+      - run_teleop_server.py
+      - --config
+      - joycon.yaml
+    cwd: scripts/hub
+
+  teleop_gamepad:
+    <<: *teleop_service_defaults
+    command:
+      - "{python}"
+      - run_teleop_server.py
+      - --config
+      - gamepad.yaml
+    cwd: scripts/hub
+
+  teleop_ar:
+    <<: *teleop_service_defaults
+    command:
+      - "{python}"
+      - run_teleop_server.py
+      - --config
+      - ar_teleop.yaml
+    cwd: scripts/hub
+
+  data_collection:
+    <<: *teleop_service_defaults
+    command:
+      - "{python}"
+      - run_data_server.py
+      - --config
+      - data_server.yaml
+    start_timeout_s: 15.0
+    cwd: scripts/hub
