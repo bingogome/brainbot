@@ -148,7 +148,7 @@ class DataCollectionCommandProvider(CommandProvider):
         if command in {"resume", "go"}:
             logger.info("[data-control] go command acknowledged")
             print("Resuming data recording...")
-            self._enter_record(now)
+            self._begin_recording(now)
             print("Recording started - robot actions are being logged")
             return
         if command in {"rerecord", "redo"}:
