@@ -16,12 +16,12 @@ teleop:
     start_timeout_s: 15.0
     host: ${HUB_HOST}
 dataset:
-  repo_id: ${HF_USER:-your_user}/xlerobot-roam-office
-  root: /home/thor/.cache/huggingface/lerobot/yihao-brain-bot/xlerobot-roam-office
+  repo_id: ${HF_USER:-your_user}/xlerobot-open-cabinet-right
+  root: /home/thor/.cache/huggingface/lerobot/yihao-brain-bot/xlerobot-open-cabinet-right
   episode_time_s: 1000
   reset_time_s: 1000
   num_episodes: 20
-  single_task: "XLeRobot roams the office."
+  single_task: "Open the top drawer using the right arm."
   video: true
   push_to_hub: false
   video_encoding_batch_size: 1
