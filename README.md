@@ -60,6 +60,45 @@ The manager idles until the robot requests a teleop/data service. Logs report wh
 Edit `brainbot/scripts/hub/hub_manager.yaml` to add or modify the services that can be launched (each entry maps to a teleop or data server configuration).
 
 ### 2. Launch Brainbot on `remote_host`
+
+#### Separate Processes
+
+To keep crashes isolated (e.g., robot firmware restarts after a command-service crash), run the control and command services in different terminals:
+
+```bash
+python scripts/remote/run_all.py command --mode-socket /tmp/brainbot_modesock
+python scripts/remote/run_all.py robot
+```
+You can launch both panes together via the helper script:
+
+```bash
+scripts/launch_brainbot_terminator.sh
+```
+
+
+The robot launcher waits until the command service socket is reachable before proceeding.
+
+```bash
+python scripts/remote/run_thor_command.py --mode-socket /tmp/brainbot_modesock
+python scripts/remote/run_thor_robot.py
+```
+
+
+
+To keep crashes isolated (e.g., robot firmware restarts after a command-service crash), run the control and command services in different terminals:
+
+```bash
+python scripts/remote/run_all.py command --mode-socket /tmp/brainbot_modesock
+python scripts/remote/run_all.py robot
+```
+
+The robot launcher waits until the command service socket is reachable before proceeding.
+
+```bash
+python scripts/remote/run_thor_command.py --mode-socket /tmp/brainbot_modesock
+python scripts/remote/run_thor_robot.py
+```
+
 ```bash
 # Full stack (command service + robot controller + optional preview camera bridge)
 export HUB_HOST=<hub_host_ip>
