@@ -94,6 +94,20 @@ Edit `scripts/launch_brainbot.sh` to customize:
 
 The script uses `source ~/miniconda3/etc/profile.d/conda.sh && conda activate <env>` to properly initialize conda in non-interactive SSH sessions, then spawns interactive shells with `bash --norc --noprofile -i` to preserve the activated environment.
 
+**Stopping Services:**
+To stop all running services launched by the script:
+
+```bash
+# Kill all brainbot processes on both remote and hub hosts
+scripts/kill_brainbot.sh
+```
+
+Alternatively, you can:
+- Close individual terminal windows to stop specific services
+- Use `Ctrl+C` in each terminal to interrupt running processes
+- Manually kill processes: `pkill -f "run_all.py"`
+- Send a shutdown command via the mode socket: `python scripts/remote/send_mode_command.py shutdown`
+
 The robot launcher waits until the command service socket is reachable before proceeding.
 
 ```bash
