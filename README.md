@@ -69,12 +69,50 @@ To keep crashes isolated (e.g., robot firmware restarts after a command-service 
 python scripts/remote/run_all.py command --mode-socket /tmp/brainbot_modesock
 python scripts/remote/run_all.py robot
 ```
-You can launch both panes together via the helper script:
+
+#### Automated Launch Script
+
+You can launch all services together via the helper script, which automatically opens multiple terminal windows with persistent conda environments:
 
 ```bash
-scripts/launch_brainbot_terminator.sh
+scripts/launch_brainbot.sh
 ```
 
+The script:
+- Opens separate terminals for command service, robot controller, interactive shell (on remote), and hub service (locally)
+- Automatically activates the configured conda environment in each terminal
+- Maintains persistent conda environments after Python scripts complete
+- Supports SSH-based remote execution with password authentication
+
+**Configuration:**
+Edit `scripts/launch_brainbot.sh` to customize:
+- `REMOTE_USER`, `REMOTE_ADDR`: SSH credentials for the remote host
+- `REMOTE_CONDA_ENV`: Conda environment name on remote host (default: `xle`)
+- `HUB_CONDA_ENV`: Conda environment name on hub host (default: `base`)
+- `REMOTE_DIR`: Working directory on remote host
+- `HUB_DIR`: Working directory on hub host
+
+The script uses `source ~/miniconda3/etc/profile.d/conda.sh && conda activate <env>` to properly initialize conda in non-interactive SSH sessions, then spawns interactive shells with `bash --norc --noprofile -i` to preserve the activated environment.
+
+**Stopping Services:**
+To stop all running services launched by the script:
+
+```bash
+# Kill all processes using ports defined in YAML configs
+scripts/kill_brainbot.sh
+```
+
+The kill script automatically:
+- Parses all YAML files in `scripts/remote/` and `scripts/hub/` directories
+- Extracts port numbers from the configuration files
+- Kills all processes listening on those ports (both locally and on the remote host)
+- Works with both `lsof` and `ss` (fallback) for maximum compatibility
+
+Alternatively, you can:
+- Close individual terminal windows to stop specific services
+- Use `Ctrl+C` in each terminal to interrupt running processes
+- Manually kill processes on a specific port: `lsof -ti:6000 | xargs kill -9`
+- Send a shutdown command via the mode socket: `python scripts/remote/send_mode_command.py shutdown`
 
 The robot launcher waits until the command service socket is reachable before proceeding.
 
