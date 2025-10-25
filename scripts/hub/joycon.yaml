@@ -3,7 +3,6 @@ teleop:
   config:
     type: xlerobot_joycon_gamepad
     id: joycon
-    arms: {}
     base:
       joystick_index: 0
       max_speed_mps: 0.8
