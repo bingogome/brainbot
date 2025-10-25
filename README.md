@@ -98,14 +98,20 @@ The script uses `source ~/miniconda3/etc/profile.d/conda.sh && conda activate <e
 To stop all running services launched by the script:
 
 ```bash
-# Kill all brainbot processes on both remote and hub hosts
+# Kill all processes using ports defined in YAML configs
 scripts/kill_brainbot.sh
 ```
+
+The kill script automatically:
+- Parses all YAML files in `scripts/remote/` and `scripts/hub/` directories
+- Extracts port numbers from the configuration files
+- Kills all processes listening on those ports (both locally and on the remote host)
+- Works with both `lsof` and `ss` (fallback) for maximum compatibility
 
 Alternatively, you can:
 - Close individual terminal windows to stop specific services
 - Use `Ctrl+C` in each terminal to interrupt running processes
-- Manually kill processes: `pkill -f "run_all.py"`
+- Manually kill processes on a specific port: `lsof -ti:6000 | xargs kill -9`
 - Send a shutdown command via the mode socket: `python scripts/remote/send_mode_command.py shutdown`
 
 The robot launcher waits until the command service socket is reachable before proceeding.
