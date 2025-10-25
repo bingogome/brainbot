@@ -35,14 +35,13 @@ teleops:
       service: teleop_gamepad
   ar:
     mode: remote
-    host: 127.0.0.1
+    host: ${HUB_HOST}
     port: 7004
     timeout_ms: 1000
     config: ../hub/ar_teleop.yaml
     manager:
       <<: *teleop_manager_defaults
       service: teleop_ar
-      host: 127.0.0.1
   # localteleop: # Example local teleop if running on-device
   #   mode: local
   #   config:
