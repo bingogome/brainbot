@@ -7,6 +7,7 @@ This pipeline also includes the following repos:
 - IsaacSim Asset Package (coming soon)
 - Customized LeRobot Fork https://github.com/bingogome/lerobot
 - Customized GR00T Fork https://github.com/bingogome/Isaac-GR00T
+- Datasets (coming soon)
 
 ## Architecture
 
