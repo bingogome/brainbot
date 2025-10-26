@@ -2,6 +2,12 @@
 
 Brainbot is a modular hub-and-spoke control stack for combining teleoperation, AI inference, multi-camera streaming, and lightweight visualization. A typical deployment uses a **remote_host** (e.g., a Jetson module mounted on the robot) to run the follower robot and AI policy, while a **hub_host** launches leader teleop devices or AR controllers.
 
+This pipeline also includes the following repos:
+- Manipulation RL in IsaacLab https://github.com/brain-sim/manipulation-lab
+- IsaacSim Asset Package (coming soon)
+- Customized LeRobot Fork https://github.com/bingogome/lerobot
+- Customized GR00T Fork https://github.com/bingogome/Isaac-GR00T
+
 ## Architecture
 
 ```
