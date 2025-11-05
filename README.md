@@ -1,6 +1,6 @@
 # brainbot
 
-Brainbot is a modular hub-and-spoke control stack for combining teleoperation, AI inference, multi-camera streaming, and lightweight visualization. A typical deployment uses a **remote_host** (e.g., a Jetson module mounted on the robot) to run the follower robot and AI policy, while a **hub_host** launches leader teleop devices or AR controllers.
+Brainbot is a modular hub-and-spoke control stack for combining teleoperation, AI inference, multi-camera streaming, and lightweight visualization. A typical deployment uses a **remote_host** (e.g., a Jetson module mounted on the robot) to run the follower robot and AI policy, while a **hub_host** launches leader teleop devices or AR controllers. Example project page https://www.hackster.io/brainbot/brainbot-big-brain-with-xlerobot-ad1b4c
 
 This pipeline also includes the following repos:
 - Manipulation RL in IsaacLab https://github.com/brain-sim/manipulation-lab
